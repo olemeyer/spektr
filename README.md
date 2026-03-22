@@ -8,9 +8,9 @@ pip install spektr
 
 ## Why spektr?
 
-Python's observability story is broken. You need **loguru** for logging, **structlog** for structured output, **OpenTelemetry** for tracing, **Sentry** for errors — four libraries, four configs, four APIs. None of them talk to each other.
+Python's observability story is fragmented. You need **loguru** for logging, **structlog** for structured output, **OpenTelemetry** for tracing, **Sentry** for errors — four libraries, four configs, four APIs. None of them talk to each other.
 
-**spektr replaces all of them with 10 concepts and zero config.**
+**spektr unifies all of them into one library with zero config.**
 
 ## Quick Start
 
@@ -233,7 +233,8 @@ with capture() as logs: ...                   # capture logs for assertions
 ## Requirements
 
 - Python 3.10+
-- Only dependency: `rich`
+- Dependencies: `rich`, `opentelemetry-api`, `opentelemetry-sdk`
+- Optional: `pip install spektr[otlp]` for OTLP export to collectors
 
 ## License
 

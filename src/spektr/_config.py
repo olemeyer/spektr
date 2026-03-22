@@ -18,9 +18,13 @@ from __future__ import annotations
 import enum
 import os
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 from ._types import LogLevel
+
+if TYPE_CHECKING:
+    from ._protocols import MetricBackend, Sampler, Sink
 
 
 class OutputMode(enum.Enum):
@@ -39,6 +43,12 @@ class Config:
     min_level: LogLevel = LogLevel.DEBUG
     endpoint: str | None = None
     show_source: bool = True
+    redact: list[str] = field(default_factory=lambda: [
+        "password", "secret", "token", "authorization", "api_key", "apikey",
+    ])
+    sinks: list[Any] = field(default_factory=list)
+    sampler: Any | None = None
+    health_path: str | None = None
 
     @staticmethod
     def from_env() -> Config:

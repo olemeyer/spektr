@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .._repr import safe_str
 from opentelemetry import context as otel_context
 from opentelemetry import trace as otel_trace
 from opentelemetry.sdk.resources import Resource
@@ -109,7 +110,7 @@ def start_span(name: str, attributes: dict[str, Any] | None = None) -> otel_trac
             if isinstance(v, (str, int, float, bool)):
                 attrs[k] = v
             elif v is not None:
-                attrs[k] = str(v)
+                attrs[k] = safe_str(v)
 
     return tracer.start_span(name, attributes=attrs or None)
 

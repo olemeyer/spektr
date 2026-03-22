@@ -3,10 +3,11 @@ from __future__ import annotations
 from contextvars import ContextVar, Token
 from typing import Any
 
-from ._types import SpanData
+from ._types import LogRecord, SpanData
 
 _log_context: ContextVar[dict[str, Any]] = ContextVar("spektr_log_context", default={})
 _current_span: ContextVar[SpanData | None] = ContextVar("spektr_current_span", default=None)
+_capturing_sink: ContextVar[list[LogRecord] | None] = ContextVar("spektr_capturing_sink", default=None)
 
 
 def get_log_context() -> dict[str, Any]:

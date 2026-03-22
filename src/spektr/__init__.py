@@ -25,15 +25,32 @@ Public API:
     capture   – Context manager to intercept log records in tests.
 """
 
-from ._capture import capture
 from ._config import configure
-from ._exceptions import install
-from ._logger import Logger
-from ._tracer import Trace
+from ._core._capture import capture
+from ._core._logger import Logger
+from ._core._tracer import Trace
+from ._integrations._exceptions import install
+from ._integrations._middleware import SpektrMiddleware
+from ._metrics._api import InMemoryMetrics
+from ._protocols import MetricBackend, Sampler, Sink
+from ._sampling._sampler import CompositeSampler, RateLimitSampler
 
 # Module-level singletons – the primary user-facing API.
 # Using instances (not classes) allows `log("msg")` instead of `Logger.info("msg")`.
 log = Logger()
 trace = Trace()
 
-__all__ = ["log", "trace", "configure", "install", "capture"]
+__all__ = [
+    "log",
+    "trace",
+    "configure",
+    "install",
+    "capture",
+    "SpektrMiddleware",
+    "Sink",
+    "Sampler",
+    "MetricBackend",
+    "RateLimitSampler",
+    "CompositeSampler",
+    "InMemoryMetrics",
+]

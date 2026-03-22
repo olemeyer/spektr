@@ -159,12 +159,17 @@ class TestCatchDecorator:
 
 class TestInstall:
     def test_install_sets_excepthook(self):
-        old_hook = sys.excepthook
+        import spektr._integrations._exceptions as exc_module
+        from spektr._exceptions import _excepthook
+
+        exc_module._installed = False
+        sys.excepthook = sys.__excepthook__  # reset to Python default
         try:
             install()
-            assert sys.excepthook is not old_hook
+            assert sys.excepthook is _excepthook
         finally:
-            sys.excepthook = old_hook
+            sys.excepthook = sys.__excepthook__
+            exc_module._installed = False
 
     def test_install_idempotent(self):
         import spektr._integrations._exceptions as exc_module
@@ -182,14 +187,16 @@ class TestInstall:
             exc_module._installed = False
 
     def test_install_with_none_app(self):
-        old_hook = sys.excepthook
+        import spektr._integrations._exceptions as exc_module
+        from spektr._exceptions import _excepthook
+
+        exc_module._installed = False
+        sys.excepthook = sys.__excepthook__  # reset to Python default
         try:
-            import spektr._integrations._exceptions as exc_module
-            exc_module._installed = False
             install(app=None)
-            assert sys.excepthook is not old_hook
+            assert sys.excepthook is _excepthook
         finally:
-            sys.excepthook = old_hook
+            sys.excepthook = sys.__excepthook__
             exc_module._installed = False
 
     def test_install_sets_threading_excepthook(self):

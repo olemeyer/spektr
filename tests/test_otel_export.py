@@ -16,12 +16,20 @@ from typing import Any
 
 import pytest
 
-from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
-    ExportTraceServiceRequest,
-)
+try:
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+        ExportTraceServiceRequest,
+    )
+except ImportError:
+    ExportTraceServiceRequest = None
 
 from spektr import SpektrMiddleware, capture, log, trace
 import spektr._otel as otel_bridge
+
+pytestmark = pytest.mark.skipif(
+    ExportTraceServiceRequest is None,
+    reason="opentelemetry-exporter-otlp-proto-http not installed",
+)
 
 
 # ── In-process OTLP Collector ────────────────────────────────

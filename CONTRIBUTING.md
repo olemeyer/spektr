@@ -68,7 +68,7 @@ These guide every decision in spektr:
 3. **Beautiful output.** If the terminal output doesn't make you smile, it's not done.
 4. **OTel under the hood, not in your face.** Users should never see `TracerProvider` or `BatchSpanProcessor`.
 5. **Async-safe always.** Everything must work correctly across async boundaries, threads, and concurrent tasks.
-6. **One dependency.** `rich` is the only runtime dependency. Adding another requires strong justification.
+6. **Minimal dependencies.** `rich` and `opentelemetry-sdk` are the runtime dependencies. Adding another requires strong justification.
 
 ## Reporting Issues
 

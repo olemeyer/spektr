@@ -32,7 +32,8 @@ Read CONTRIBUTING.md for guidelines on how to contribute.
 
 ## Dependencies
 
-- Runtime: only `rich>=13.0` — keep the dependency footprint minimal
+- Runtime: `rich`, `opentelemetry-api`, `opentelemetry-sdk` — keep the dependency footprint minimal
+- OTLP exporter is optional (`spektr[otlp]`)
 - NEVER add runtime dependencies without discussion
 - Dev dependencies (pytest) are not included in the package
 

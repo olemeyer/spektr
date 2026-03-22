@@ -167,7 +167,7 @@ class TestInstall:
             sys.excepthook = old_hook
 
     def test_install_idempotent(self):
-        import spektr._exceptions as exc_module
+        import spektr._integrations._exceptions as exc_module
 
         old_hook = sys.excepthook
         try:
@@ -184,10 +184,137 @@ class TestInstall:
     def test_install_with_none_app(self):
         old_hook = sys.excepthook
         try:
-            import spektr._exceptions as exc_module
+            import spektr._integrations._exceptions as exc_module
             exc_module._installed = False
             install(app=None)
             assert sys.excepthook is not old_hook
         finally:
             sys.excepthook = old_hook
             exc_module._installed = False
+
+    def test_install_sets_threading_excepthook(self):
+        import threading
+        import spektr._integrations._exceptions as exc_module
+        from spektr._exceptions import _threading_excepthook
+
+        old_hook = sys.excepthook
+        try:
+            exc_module._installed = False
+            install()
+            assert threading.excepthook is _threading_excepthook
+        finally:
+            sys.excepthook = old_hook
+            exc_module._installed = False
+
+    def test_install_activates_bridge(self):
+        """install() should add SpektrHandler to root logger."""
+        import logging
+        import spektr._integrations._exceptions as exc_module
+        from spektr._bridge import SpektrHandler
+
+        old_hook = sys.excepthook
+        root = logging.getLogger()
+        original_handlers = root.handlers[:]
+        try:
+            exc_module._installed = False
+            install()
+            assert any(isinstance(h, SpektrHandler) for h in root.handlers)
+        finally:
+            sys.excepthook = old_hook
+            root.handlers = original_handlers
+            exc_module._installed = False
+
+    def test_install_with_fastapi_app(self):
+        """install(app) with FastAPI-like app adds middleware."""
+        import spektr._integrations._exceptions as exc_module
+
+        added = []
+
+        class FakeApp:
+            def add_middleware(self, cls):
+                added.append(cls)
+
+        app = FakeApp()
+        app.__class__.__name__ = "FastAPI"
+
+        old_hook = sys.excepthook
+        try:
+            exc_module._installed = False
+            install(app=app)
+            assert len(added) == 1
+        finally:
+            sys.excepthook = old_hook
+            exc_module._installed = False
+
+
+class TestInstallFramework:
+    def test_unknown_class_name_no_error(self):
+        from spektr._exceptions import _install_framework
+
+        class Flask:
+            pass
+
+        app = Flask()
+        _install_framework(app)  # Should not raise
+
+    def test_starlette_adds_middleware(self):
+        from spektr._exceptions import _install_framework
+        from spektr._middleware import SpektrMiddleware
+
+        added = []
+
+        class FakeStarlette:
+            def add_middleware(self, cls):
+                added.append(cls)
+
+        app = FakeStarlette()
+        app.__class__.__name__ = "Starlette"
+        _install_framework(app)
+
+        assert added == [SpektrMiddleware]
+
+
+class TestCatchEdgeCases:
+    def test_catch_with_none_argument(self):
+        """log.catch() with no arguments should work as decorator factory."""
+        @log.catch()
+        def failing():
+            raise ValueError("test")
+
+        with capture() as logs:
+            with pytest.raises(ValueError):
+                failing()
+
+        assert len(logs) == 1
+
+    def test_catch_async_suppressed_returns_none(self):
+        @log.catch(reraise=False)
+        async def async_failing():
+            raise ValueError("async suppressed")
+
+        async def run():
+            with capture() as logs:
+                result = await async_failing()
+            return logs, result
+
+        logs, result = asyncio.run(run())
+        assert result is None
+        assert len(logs) == 1
+
+    def test_catch_preserves_async_function_name(self):
+        @log.catch
+        async def my_async_func():
+            pass
+
+        assert my_async_func.__name__ == "my_async_func"
+
+    def test_catch_with_generator_function(self):
+        """catch should work with functions that have various signatures."""
+        @log.catch(reraise=False)
+        def variadic(*args, **kwargs):
+            raise RuntimeError(f"args={len(args)}")
+
+        with capture() as logs:
+            variadic(1, 2, 3, key="val")
+
+        assert "args=3" in logs[0].message

@@ -362,3 +362,381 @@ class TestEdgeCases:
         with capture() as logs:
             bound("msg")
         assert logs[0].context == {}
+
+
+# ── Feature Integration: Timing + Context + Tracing ────────
+
+
+class TestTimingIntegration:
+    def test_time_inside_trace(self):
+        """log.time inside a trace span should have trace IDs."""
+        with capture() as logs:
+            with trace("parent"):
+                with log.time("db query"):
+                    time.sleep(0.005)
+
+        assert len(logs) == 1
+        assert logs[0].trace_id is not None
+        assert logs[0].data["duration_ms"] >= 3
+
+    def test_time_with_context(self):
+        """log.time inside a context should inherit context."""
+        with capture() as logs:
+            with log.context(request_id="req-1"):
+                with log.time("process"):
+                    pass
+
+        assert logs[0].context["request_id"] == "req-1"
+
+    def test_time_decorator_inside_trace(self):
+        @log.time
+        @trace
+        def traced_and_timed():
+            return 42
+
+        with capture() as logs:
+            result = traced_and_timed()
+
+        assert result == 42
+        assert len(logs) == 1
+        assert "duration_ms" in logs[0].data
+
+
+class TestRateLimitIntegration:
+    def test_once_inside_context(self):
+        """log.once should inherit context."""
+        from spektr._logger import _once_seen, _rate_lock
+
+        with _rate_lock:
+            _once_seen.clear()
+
+        with capture() as logs:
+            with log.context(request_id="req-1"):
+                log.once("initialized")
+
+        assert logs[0].context["request_id"] == "req-1"
+
+    def test_sample_inside_trace(self):
+        """log.sample should have trace IDs when inside a span."""
+        with capture() as logs:
+            with trace("span"):
+                log.sample(1.0, "sampled event")
+
+        assert logs[0].trace_id is not None
+
+    def test_every_with_structured_data(self):
+        from spektr._logger import _every_counters, _rate_lock
+
+        with _rate_lock:
+            _every_counters.clear()
+
+        with capture() as logs:
+            for i in range(6):
+                log.every(3, "batch", batch_number=i)
+
+        assert len(logs) == 2
+        assert logs[0].data["batch_number"] == 0
+        assert logs[1].data["batch_number"] == 3
+
+
+class TestRedactionIntegration:
+    def test_redaction_with_bound_logger(self):
+        """Bound logger context should also be redacted in output."""
+        from spektr._formatters import format_record_json
+
+        secret_log = log.bind(api_key="sk-123")
+        with capture() as logs:
+            secret_log("request")
+
+        # capture() should preserve raw values
+        assert logs[0].context["api_key"] == "sk-123"
+
+    def test_redaction_in_timing_data(self, capsys):
+        """Sensitive keys in log.time kwargs should be redacted in output."""
+        from spektr._formatters import format_record_json
+        from spektr._types import LogLevel, LogRecord
+
+        record = LogRecord(
+            timestamp=time.time(),
+            level=LogLevel.INFO,
+            message="db query",
+            data={"duration_ms": 42.0, "password": "secret"},
+            context={},
+        )
+        format_record_json(record)
+        output = capsys.readouterr().err
+        parsed = json.loads(output)
+        assert parsed["duration_ms"] == 42.0
+        assert parsed["password"] == "***"
+
+
+class TestMiddlewareIntegration:
+    def test_middleware_with_bound_logger_inside(self):
+        """Logs from bound loggers inside middleware should have request_id."""
+        db_log = log.bind(component="database")
+
+        async def app_with_bound_logger(scope, receive, send):
+            db_log("query executed", table="users")
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"OK"})
+
+        from spektr import SpektrMiddleware
+
+        async def run():
+            app = SpektrMiddleware(app_with_bound_logger)
+            scope = {"type": "http", "method": "GET", "path": "/users",
+                     "query_string": b"", "headers": []}
+            with capture() as logs:
+                await app(scope, _noop_receive, _noop_send)
+            return logs
+
+        async def _noop_receive():
+            return {"type": "http.request", "body": b""}
+
+        async def _noop_send(message):
+            pass
+
+        logs = asyncio.run(run())
+        db_logs = [r for r in logs if r.message == "query executed"]
+        assert len(db_logs) == 1
+        assert db_logs[0].context["component"] == "database"
+        assert "request_id" in db_logs[0].context
+
+
+class TestMetricsIntegration:
+    """Tests for metrics combined with other features."""
+
+    def test_metrics_inside_trace(self):
+        from spektr._metrics._api import _metrics
+
+        _metrics.reset()
+
+        with trace("request"):
+            log.count("db.queries", table="users")
+            log.histogram("db.latency_ms", 42.0, table="users")
+
+        assert _metrics.get_counter("db.queries", table="users") == 1
+        assert _metrics.get_histogram("db.latency_ms", table="users") == [42.0]
+
+    def test_progress_with_trace(self):
+        with capture() as logs:
+            with trace("batch"):
+                with log.progress("import", total=10) as progress:
+                    for _ in range(10):
+                        progress.advance()
+
+        completed = [r for r in logs if "completed" in r.message]
+        assert len(completed) == 1
+        assert completed[0].trace_id is not None
+
+    def test_progress_with_context(self):
+        with capture() as logs:
+            with log.context(batch_id="batch-42"):
+                with log.progress("export", total=5) as progress:
+                    for _ in range(5):
+                        progress.advance()
+
+        for record in logs:
+            assert record.context["batch_id"] == "batch-42"
+
+
+class TestSinkAndSamplerIntegration:
+    """Tests combining sinks and samplers."""
+
+    def test_sampler_with_sink(self):
+        records = []
+
+        class ListSink:
+            def write(self, record):
+                records.append(record)
+
+            def flush(self):
+                pass
+
+        class WarningOnly:
+            def should_emit(self, level, message):
+                return level >= LogLevel.WARNING
+
+        configure(sinks=[ListSink()], sampler=WarningOnly())
+        log.info("should be dropped")
+        log.warning("should pass")
+        log.error("also passes")
+
+        assert len(records) == 2
+        assert records[0].message == "should pass"
+        assert records[1].message == "also passes"
+
+    def test_structured_exceptions_in_sink(self):
+        records = []
+
+        class ListSink:
+            def write(self, record):
+                records.append(record)
+
+            def flush(self):
+                pass
+
+        configure(sinks=[ListSink()])
+
+        @log.catch(reraise=False)
+        def fail():
+            raise ValueError("sink error")
+
+        fail()
+
+        assert len(records) == 1
+        assert records[0].data["error_type"] == "ValueError"
+        assert records[0].data["error_message"] == "sink error"
+        assert "error_stacktrace" in records[0].data
+
+
+class TestPropagationIntegration:
+    """Tests for W3C trace context propagation combined with other features."""
+
+    def test_inject_in_outgoing_request(self):
+        """Simulate injecting trace context for an outgoing HTTP call."""
+        with capture() as logs:
+            with trace("parent-service"):
+                headers = trace.inject()
+                log("calling downstream", traceparent=headers.get("traceparent", ""))
+
+        assert logs[0].data["traceparent"] != ""
+        assert logs[0].data["traceparent"].startswith("00-")
+
+    def test_extract_from_incoming_request(self):
+        """Simulate extracting trace context from an incoming HTTP request."""
+        headers = {"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
+        ctx = trace.extract(headers)
+        assert ctx is not None
+        assert ctx.trace_id == "4bf92f3577b34da6a3ce929d0e0e4736"
+
+
+class TestMiddlewareMetrics:
+    """Tests for automatic middleware metrics."""
+
+    def test_middleware_records_request_metrics(self):
+        from spektr._metrics._api import _metrics
+
+        _metrics.reset()
+
+        async def app(scope, receive, send):
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"OK"})
+
+        from spektr import SpektrMiddleware
+
+        async def run():
+            middleware = SpektrMiddleware(app)
+            scope = {"type": "http", "method": "GET", "path": "/api/test", "headers": []}
+            with capture():
+                await middleware(scope, _noop_receive, _noop_send)
+
+        async def _noop_receive():
+            return {"type": "http.request", "body": b""}
+
+        async def _noop_send(message):
+            pass
+
+        asyncio.run(run())
+
+        assert _metrics.get_counter("http.requests.total", method="GET", path="/api/test", status="200") == 1
+        latencies = _metrics.get_histogram("http.request.duration_ms", method="GET", path="/api/test")
+        assert len(latencies) == 1
+        assert latencies[0] >= 0
+
+
+class TestMiddlewareW3CPropagation:
+    """Tests for W3C trace context extraction in middleware."""
+
+    def test_middleware_extracts_traceparent(self):
+        trace_parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+        async def app(scope, receive, send):
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"OK"})
+
+        from spektr import SpektrMiddleware
+
+        async def run():
+            middleware = SpektrMiddleware(app)
+            scope = {
+                "type": "http",
+                "method": "GET",
+                "path": "/api",
+                "headers": [
+                    (b"traceparent", trace_parent.encode()),
+                ],
+            }
+            with capture() as logs:
+                await middleware(scope, _noop_receive, _noop_send)
+            return logs
+
+        async def _noop_receive():
+            return {"type": "http.request", "body": b""}
+
+        async def _noop_send(message):
+            pass
+
+        logs = asyncio.run(run())
+        completed = [r for r in logs if r.message == "request completed"]
+        assert len(completed) == 1
+
+
+class TestPublicAPI:
+    """Verify the public API surface is correct."""
+
+    def test_all_exports(self):
+        import spektr
+        assert hasattr(spektr, "log")
+        assert hasattr(spektr, "trace")
+        assert hasattr(spektr, "configure")
+        assert hasattr(spektr, "install")
+        assert hasattr(spektr, "capture")
+        assert hasattr(spektr, "SpektrMiddleware")
+
+    def test_new_exports(self):
+        import spektr
+        assert hasattr(spektr, "Sink")
+        assert hasattr(spektr, "Sampler")
+        assert hasattr(spektr, "MetricBackend")
+        assert hasattr(spektr, "RateLimitSampler")
+        assert hasattr(spektr, "CompositeSampler")
+        assert hasattr(spektr, "InMemoryMetrics")
+
+    def test_log_is_singleton(self):
+        from spektr import log as log1
+        from spektr import log as log2
+        assert log1 is log2
+
+    def test_trace_is_singleton(self):
+        from spektr import trace as trace1
+        from spektr import trace as trace2
+        assert trace1 is trace2
+
+    def test_log_has_all_methods(self):
+        assert callable(log)
+        assert callable(log.debug)
+        assert callable(log.info)
+        assert callable(log.warn)
+        assert callable(log.warning)
+        assert callable(log.error)
+        assert callable(log.exception)
+        assert callable(log.once)
+        assert callable(log.every)
+        assert callable(log.sample)
+        assert callable(log.time)
+        assert callable(log.bind)
+        assert callable(log.context)
+        assert callable(log.count)
+        assert callable(log.gauge)
+        assert callable(log.histogram)
+        assert callable(log.progress)
+
+    def test_trace_has_propagation_methods(self):
+        assert callable(trace.inject)
+        assert callable(trace.extract)
+
+    def test_all_list_complete(self):
+        import spektr
+        for name in spektr.__all__:
+            assert hasattr(spektr, name), f"{name} in __all__ but not in module"

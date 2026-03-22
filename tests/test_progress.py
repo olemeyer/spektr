@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from spektr import capture, log
+from spektr._metrics._progress import ProgressTracker, _use_tqdm
 from spektr._types import LogLevel
 
 
@@ -120,6 +122,87 @@ class TestProgressEdgeCases:
                 pass
         for record in logs:
             assert record.level == LogLevel.INFO
+
+
+class TestProgressTqdm:
+    """Tests for tqdm integration in ProgressTracker."""
+
+    def test_use_tqdm_false_when_not_installed(self):
+        with patch("spektr._metrics._progress._tqdm", None):
+            assert _use_tqdm() is False
+
+    def test_tqdm_bar_created_when_enabled(self):
+        """When use_tqdm=True, a tqdm bar is created and updated."""
+        mock_bar = MagicMock()
+        with patch("spektr._metrics._progress._tqdm", return_value=mock_bar) as mock_tqdm_cls:
+            tracker = ProgressTracker(log, "test", total=100, use_tqdm=True)
+            with capture() as logs:
+                with tracker:
+                    tracker.advance(50)
+                    tracker.advance(50)
+
+            mock_tqdm_cls.assert_called_once()
+            assert mock_bar.update.call_count == 2
+            mock_bar.update.assert_any_call(50)
+            mock_bar.close.assert_called_once()
+
+            # Completed summary still logged
+            assert "completed" in logs[-1].message
+            assert logs[-1].data["current"] == 100
+
+    def test_tqdm_bar_set_updates_delta(self):
+        """set() should update tqdm with the delta, not the absolute value."""
+        mock_bar = MagicMock()
+        with patch("spektr._metrics._progress._tqdm", return_value=mock_bar):
+            tracker = ProgressTracker(log, "test", total=100, use_tqdm=True)
+            with capture() as logs:
+                with tracker:
+                    tracker.advance(20)
+                    tracker.set(75)
+
+            # set(75) from current=20 should update by 55
+            mock_bar.update.assert_any_call(20)
+            mock_bar.update.assert_any_call(55)
+
+    def test_tqdm_suppresses_interval_logs(self):
+        """When tqdm is active, no interval progress logs should be emitted."""
+        mock_bar = MagicMock()
+        with patch("spektr._metrics._progress._tqdm", return_value=mock_bar):
+            tracker = ProgressTracker(log, "test", total=100, log_interval=0.0, use_tqdm=True)
+            with capture() as logs:
+                with tracker:
+                    for _ in range(100):
+                        tracker.advance()
+
+            # Only the final "completed" log, no interval progress logs
+            assert len(logs) == 1
+            assert "completed" in logs[0].message
+
+    def test_no_tqdm_falls_back_to_log(self):
+        """When use_tqdm=False, falls back to log-based progress."""
+        tracker = ProgressTracker(log, "fallback", total=10, use_tqdm=False)
+        with capture() as logs:
+            with tracker:
+                for _ in range(10):
+                    tracker.advance()
+
+        # Should have at least start + completed
+        assert len(logs) >= 2
+        assert "progress" in logs[0].message
+        assert "completed" in logs[-1].message
+
+    def test_tqdm_without_total(self):
+        """tqdm should work with indeterminate progress (no total)."""
+        mock_bar = MagicMock()
+        with patch("spektr._metrics._progress._tqdm", return_value=mock_bar) as mock_cls:
+            tracker = ProgressTracker(log, "stream", use_tqdm=True)
+            with capture():
+                with tracker:
+                    tracker.advance(10)
+
+            mock_cls.assert_called_once()
+            call_kwargs = mock_cls.call_args
+            assert call_kwargs[1]["total"] is None or call_kwargs[0][0] is None
 
 
 class TestProgressAsync:

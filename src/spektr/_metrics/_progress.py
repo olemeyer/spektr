@@ -6,15 +6,35 @@ Usage::
         for user in users:
             process(user)
             progress.advance()
+
+When ``tqdm`` is installed and output is RICH mode on a TTY, a live
+progress bar is shown instead of periodic log lines.
 """
 
 from __future__ import annotations
 
+import sys
 import time
 from typing import TYPE_CHECKING, Any
 
+try:
+    from tqdm.auto import tqdm as _tqdm
+except ImportError:
+    _tqdm = None  # type: ignore[assignment]
+
 if TYPE_CHECKING:
     from .._core._logger import Logger
+
+
+def _use_tqdm() -> bool:
+    """Decide whether to use tqdm for progress display."""
+    if _tqdm is None:
+        return False
+    from .._config import OutputMode, get_config
+    config = get_config()
+    if config.output_mode != OutputMode.RICH:
+        return False
+    return hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
 
 
 class ProgressTracker:
@@ -22,6 +42,9 @@ class ProgressTracker:
 
     Automatically rate-limits log output to avoid flooding (max 1 log per
     ``log_interval`` seconds).  On exit, always logs a final summary.
+
+    When ``tqdm`` is installed and output is in RICH mode on a TTY, displays
+    a live progress bar instead of periodic log lines.
     """
 
     def __init__(
@@ -30,6 +53,8 @@ class ProgressTracker:
         name: str,
         total: int | None = None,
         log_interval: float = 1.0,
+        *,
+        use_tqdm: bool | None = None,
     ) -> None:
         self._logger = logger
         self._name = name
@@ -38,15 +63,31 @@ class ProgressTracker:
         self._current = 0
         self._start: float = 0.0
         self._last_log: float = 0.0
+        self._tqdm_bar: Any = None
+        self._use_tqdm = use_tqdm if use_tqdm is not None else _use_tqdm()
 
     def __enter__(self) -> ProgressTracker:
         self._start = time.monotonic()
         self._last_log = self._start
         self._current = 0
-        self._log_progress()
+
+        if self._use_tqdm:
+            self._tqdm_bar = _tqdm(
+                total=self._total,
+                desc=self._name,
+                unit="it",
+                file=sys.stderr,
+            )
+        else:
+            self._log_progress()
+
         return self
 
     def __exit__(self, *_: Any) -> None:
+        if self._tqdm_bar is not None:
+            self._tqdm_bar.close()
+            self._tqdm_bar = None
+
         duration_ms = (time.monotonic() - self._start) * 1000
         data: dict[str, Any] = {
             "name": self._name,
@@ -69,6 +110,11 @@ class ProgressTracker:
     def advance(self, n: int = 1) -> None:
         """Advance progress by *n* items."""
         self._current += n
+
+        if self._tqdm_bar is not None:
+            self._tqdm_bar.update(n)
+            return
+
         now = time.monotonic()
         if now - self._last_log >= self._log_interval:
             self._log_progress()
@@ -76,7 +122,13 @@ class ProgressTracker:
 
     def set(self, current: int) -> None:
         """Set absolute progress value."""
+        previous = self._current
         self._current = current
+
+        if self._tqdm_bar is not None:
+            self._tqdm_bar.update(current - previous)
+            return
+
         now = time.monotonic()
         if now - self._last_log >= self._log_interval:
             self._log_progress()

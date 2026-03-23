@@ -25,6 +25,7 @@ Public API:
     capture   – Context manager to intercept log records in tests.
 """
 
+from ._version import __version__
 from ._config import configure
 from ._core._capture import capture
 from ._core._logger import Logger
@@ -41,6 +42,7 @@ log = Logger()
 trace = Trace()
 
 __all__ = [
+    "__version__",
     "log",
     "trace",
     "configure",

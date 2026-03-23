@@ -5,18 +5,17 @@ import os
 import sys
 import threading
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.text import Text
 from rich.traceback import Traceback
 from rich.tree import Tree
 
-_SPEKTR_PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 from .._config import get_config
 from .._repr import safe_repr, safe_str
 from .._types import LogLevel, LogRecord, SpanData
+
+_SPEKTR_PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _LEVEL_STYLES = {
     LogLevel.DEBUG: ("DEBUG", "dim blue"),
@@ -148,10 +147,7 @@ def format_trace_rich(root: SpanData) -> None:
             error_msg = str(span.error) if span.error else "error"
             label.append(f"  {error_msg}", style="bold red")
 
-        if tree is None:
-            node = Tree(label, guide_style="dim")
-        else:
-            node = tree.add(label)
+        node = Tree(label, guide_style="dim") if tree is None else tree.add(label)
 
         for child in span.children:
             _build_tree(child, node)
@@ -211,7 +207,9 @@ def format_trace_json(root: SpanData) -> None:
             d["parent_id"] = span.parent_id
         if span.data:
             redacted = _redact_dict(span.data, get_config().redact)
-            d["attributes"] = {k: safe_str(v) if not isinstance(v, (int, float, bool)) else v for k, v in redacted.items()}
+            d["attributes"] = {
+                k: safe_str(v) if not isinstance(v, (int, float, bool)) else v for k, v in redacted.items()
+            }
         if span.error:
             d["error"] = {"type": type(span.error).__name__, "message": str(span.error)}
         if span.children:

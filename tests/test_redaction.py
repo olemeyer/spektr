@@ -5,7 +5,7 @@ import sys
 
 from spektr import capture, configure, log
 from spektr._config import get_config
-from spektr._formatters import _redact_dict
+from spektr._output._formatters import _redact_dict
 
 
 class TestRedactDict:
@@ -114,7 +114,7 @@ class TestRedactDictEdgeCases:
 class TestRedactionInOutput:
     def test_json_output_redacted(self, capsys):
         """JSON output should redact sensitive keys."""
-        from spektr._formatters import format_record_json
+        from spektr._output._formatters import format_record_json
         from spektr._types import LogLevel, LogRecord
 
         import time as _time
@@ -136,7 +136,7 @@ class TestRedactionInOutput:
     def test_custom_redact_patterns(self, capsys):
         """configure(redact=...) overrides default patterns."""
         from spektr._config import _config
-        from spektr._formatters import format_record_json
+        from spektr._output._formatters import format_record_json
         from spektr._types import LogLevel, LogRecord
 
         import time as _time
@@ -183,7 +183,7 @@ class TestRedactionInOutput:
 
     def test_redaction_in_log_pipeline(self, capsys):
         """End-to-end: log with sensitive data, verify JSON output is redacted."""
-        from spektr._formatters import format_record_json
+        from spektr._output._formatters import format_record_json
         from spektr._types import LogLevel, LogRecord
 
         import time as _time

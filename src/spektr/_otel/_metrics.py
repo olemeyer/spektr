@@ -18,8 +18,6 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import MetricReader
 from opentelemetry.sdk.resources import Resource
 
-from .._protocols import MetricBackend
-
 # Module-level state -- managed exclusively through setup_metrics() / shutdown_metrics().
 _backend: OTelMetricBackend | None = None
 

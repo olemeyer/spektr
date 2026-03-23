@@ -33,7 +33,7 @@ from spektr import (
     log,
     trace,
 )
-from spektr._bridge import SpektrHandler, install_bridge
+from spektr._integrations._bridge import SpektrHandler, install_bridge
 from spektr._config import OutputMode
 from spektr._metrics._api import _metrics
 from spektr._types import LogLevel

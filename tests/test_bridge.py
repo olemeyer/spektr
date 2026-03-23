@@ -5,7 +5,7 @@ import logging
 import pytest
 
 from spektr import capture, install
-from spektr._bridge import SpektrHandler, install_bridge
+from spektr._integrations._bridge import SpektrHandler, install_bridge
 from spektr._config import get_config, configure
 from spektr._types import LogLevel
 
@@ -315,7 +315,7 @@ class TestBridgeRecursionGuard:
 
     def test_recursion_guard_resets_after_exception(self):
         """The bridge guard should reset even if _handle raises."""
-        from spektr._bridge import _in_bridge
+        from spektr._integrations._bridge import _in_bridge
 
         install_bridge()
         logger = logging.getLogger("test.guard.reset")
@@ -326,3 +326,60 @@ class TestBridgeRecursionGuard:
             logger.info("after reset")
         assert _in_bridge.get() is False
         assert len(logs) == 1
+
+    def test_recursion_guard_drops_reentrant_record(self):
+        """Bridge should not recurse when already inside the bridge."""
+        from spektr._integrations._bridge import SpektrHandler, _in_bridge
+
+        handler = SpektrHandler()
+
+        # Simulate being inside the bridge already
+        token = _in_bridge.set(True)
+        try:
+            record = logging.LogRecord(
+                name="test",
+                level=logging.INFO,
+                pathname="test.py",
+                lineno=1,
+                msg="should be dropped",
+                args=(),
+                exc_info=None,
+            )
+            with capture() as logs:
+                handler.emit(record)
+
+            assert len(logs) == 0
+        finally:
+            _in_bridge.reset(token)
+
+
+class TestBridgeJsonMode:
+    def test_bridge_formats_json_when_configured(self):
+        """Bridge should format as JSON when output_mode is JSON."""
+        import spektr._config as config_module
+        from spektr._config import Config, OutputMode
+        from spektr._integrations._bridge import SpektrHandler
+
+        handler = SpektrHandler()
+        old_config = config_module._config
+
+        try:
+            config_module._config = Config(output_mode=OutputMode.JSON)
+
+            record = logging.LogRecord(
+                name="sqlalchemy",
+                level=logging.INFO,
+                pathname="engine.py",
+                lineno=42,
+                msg="SELECT * FROM users",
+                args=(),
+                exc_info=None,
+            )
+
+            with capture() as logs:
+                handler.emit(record)
+
+            assert len(logs) == 1
+            assert logs[0].data["logger"] == "sqlalchemy"
+        finally:
+            config_module._config = old_config

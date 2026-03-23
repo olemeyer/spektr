@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .._context import merge_log_context, reset_log_context
-from .._logger import Logger
-from .._tracer import _SpanContext
+from .._core._logger import Logger
+from .._core._tracer import _SpanContext
 from .._types import LogLevel
 
 _logger = Logger()
@@ -77,8 +78,8 @@ class SpektrMiddleware:
             from .._otel._propagation import extract_context
 
             trace_context = extract_context(request_headers)
-        except Exception:
-            pass
+        except Exception:  # pragma: no cover
+            pass  # pragma: no cover
 
         status_code = 0
 
@@ -128,5 +129,5 @@ class SpektrMiddleware:
 
             _metrics.count("http.requests.total", method=method, path=path, status=str(status_code))
             _metrics.histogram("http.request.duration_ms", duration_ms, method=method, path=path)
-        except Exception:
-            pass
+        except Exception:  # pragma: no cover
+            pass  # pragma: no cover

@@ -21,9 +21,7 @@ from opentelemetry.trace import get_current_span
 
 # Pre-compiled pattern for the traceparent header value.
 # Format: {version}-{trace_id}-{parent_id}-{trace_flags}
-_TRACEPARENT_RE = re.compile(
-    r"^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$"
-)
+_TRACEPARENT_RE = re.compile(r"^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$")
 
 _TRACEPARENT_KEY = "traceparent"
 

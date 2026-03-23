@@ -15,7 +15,7 @@ from types import TracebackType
 
 from rich.traceback import Traceback
 
-from .._formatters import _get_console
+from .._output._formatters import _get_console
 
 
 def _excepthook(exc_type: type[BaseException], exc_value: BaseException, exc_tb: TracebackType | None) -> None:
@@ -45,6 +45,7 @@ def install(app: object | None = None) -> None:
 
         # Activate the stdlib logging bridge.
         from ._bridge import install_bridge
+
         install_bridge()
 
         _installed = True
@@ -63,4 +64,5 @@ def _install_framework(app: object) -> None:
 def _install_asgi(app: object) -> None:
     """Add SpektrMiddleware to a FastAPI/Starlette app."""
     from ._middleware import SpektrMiddleware
+
     app.add_middleware(SpektrMiddleware)  # type: ignore[attr-defined]

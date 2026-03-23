@@ -349,3 +349,52 @@ class TestLogTraceCorrelation:
                 log("c")
         trace_ids = {r.trace_id for r in logs}
         assert len(trace_ids) == 1  # all same trace
+
+
+# ── SpanData ────────────────────────────────────────────────
+
+
+class TestSpanData:
+    def test_duration_ms_none_when_no_end_time(self):
+        from spektr._types import SpanData
+
+        span = SpanData(
+            name="test",
+            span_id="abc",
+            trace_id="def",
+            parent_id=None,
+            start_time=1.0,
+        )
+        assert span.duration_ms is None
+
+    def test_duration_ms_computed(self):
+        from spektr._types import SpanData
+
+        span = SpanData(
+            name="test",
+            span_id="abc",
+            trace_id="def",
+            parent_id=None,
+            start_time=1.0,
+            end_time=1.05,
+        )
+        assert abs(span.duration_ms - 50.0) < 0.1
+
+
+# ── Trace Input Validation ──────────────────────────────────
+
+
+class TestTraceInputValidation:
+    def test_invalid_argument_raises(self):
+        with pytest.raises(TypeError, match="unexpected argument"):
+            trace(12345)
+
+    def test_extract_args_failure(self):
+        """When signature introspection fails, span should still work."""
+        @trace
+        def wrapper():
+            return 42
+
+        with capture():
+            result = wrapper()
+        assert result == 42

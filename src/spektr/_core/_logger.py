@@ -8,13 +8,13 @@ import sys
 import threading
 import time
 import traceback
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .._config import OutputMode, get_config
 from .._context import _capturing_sink, get_current_span, get_log_context, merge_log_context, reset_log_context
-from .._formatters import format_record_json, format_record_rich
+from .._output._formatters import format_record_json, format_record_rich
 from .._types import LogLevel, LogRecord, SourceLocation
-
 
 _SPEKTR_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -30,7 +30,7 @@ def _get_source(depth: int) -> SourceLocation | None:
         if not filename.startswith(_SPEKTR_DIR):
             break
         frame = frame.f_back
-    if frame is None:
+    if frame is None:  # pragma: no cover – all frames inside spektr
         return None
     filename = frame.f_code.co_filename
     try:
@@ -51,22 +51,32 @@ class _CatchDecorator:
     def __call__(self, func: Callable | None = None, *, reraise: bool = True) -> Any:
         if func is not None and callable(func):
             return self._wrap(func, reraise=True)
+
         # called as @log.catch(reraise=False)
         def decorator(fn: Callable) -> Callable:
             return self._wrap(fn, reraise=reraise)
+
         return decorator
 
     def _wrap(self, func: Callable, reraise: bool) -> Callable:
         if inspect.iscoroutinefunction(func):
+
             @functools.wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 try:
                     return await func(*args, **kwargs)
                 except Exception as exc:
-                    self._logger._emit(LogLevel.ERROR, f"{type(exc).__name__}: {exc}", {}, exc_info=sys.exc_info(), depth=1)
+                    self._logger._emit(
+                        LogLevel.ERROR,
+                        f"{type(exc).__name__}: {exc}",
+                        {},
+                        exc_info=sys.exc_info(),
+                        depth=1,
+                    )
                     if reraise:
                         raise
                     return None
+
             return async_wrapper
 
         @functools.wraps(func)
@@ -78,6 +88,7 @@ class _CatchDecorator:
                 if reraise:
                     raise
                 return None
+
         return wrapper
 
 
@@ -104,7 +115,7 @@ class _ContextManager:
 # ── Rate-limiting state ──────────────────────────────────────
 
 _rate_lock = threading.Lock()
-_once_seen: set[tuple] = set()
+_once_seen: set[str] = set()
 _every_counters: dict[tuple, int] = {}
 
 
@@ -117,7 +128,68 @@ def _caller_key(message: str, depth: int = 2) -> tuple:
         return (message, "", 0)
 
 
+def _user_caller_key(message: str) -> tuple:
+    """Walk up the stack to find the first non-spektr frame for call site ID."""
+    try:
+        frame = sys._getframe(1)
+        while frame is not None:
+            filename = os.path.abspath(frame.f_code.co_filename)
+            if not filename.startswith(_SPEKTR_DIR):
+                return (message, frame.f_code.co_filename, frame.f_lineno)
+            frame = frame.f_back
+    except (AttributeError, ValueError):  # pragma: no cover
+        pass
+    return (message, "", 0)  # pragma: no cover
+
+
+# ── Rate-Limited Logger (for chaining) ──────────────────────
+
+
+class _RateLimitedLogger:
+    """Logger proxy returned by log.once() / log.every(n) / log.sample(rate).
+
+    Allows chaining a severity level onto rate-limited calls::
+
+        log.sample(0.01).debug("verbose trace", payload=data)
+        log.every(1000).warn("slow query", table="orders")
+        log.once().error("critical config missing")
+    """
+
+    def __init__(self, logger: Logger, gate: Callable[[str], bool]) -> None:
+        self._logger = logger
+        self._gate = gate
+
+    def __call__(self, message: str, **kwargs: Any) -> None:
+        """Shorthand for .info()."""
+        self._log(LogLevel.INFO, message, kwargs)
+
+    def debug(self, message: str, **kwargs: Any) -> None:
+        self._log(LogLevel.DEBUG, message, kwargs)
+
+    def info(self, message: str, **kwargs: Any) -> None:
+        self._log(LogLevel.INFO, message, kwargs)
+
+    def warn(self, message: str, **kwargs: Any) -> None:
+        self._log(LogLevel.WARNING, message, kwargs)
+
+    def warning(self, message: str, **kwargs: Any) -> None:
+        self._log(LogLevel.WARNING, message, kwargs)
+
+    def error(self, message: str, **kwargs: Any) -> None:
+        self._log(LogLevel.ERROR, message, kwargs)
+
+    def _log(self, level: LogLevel, message: str, kwargs: dict[str, Any]) -> None:
+        if self._gate(message):
+            self._logger._emit(
+                level,
+                self._logger._format_message(message, kwargs),
+                kwargs,
+                depth=2,
+            )
+
+
 # ── Timer Context Manager ───────────────────────────────────
+
 
 class _TimerContext:
     """Context manager and decorator that measures duration and logs it."""
@@ -159,27 +231,27 @@ class Logger:
     # ── Main call: log("msg", key=val) ──────────────────────
 
     def __call__(self, message: str, **kwargs: Any) -> None:
-        self._emit(LogLevel.INFO, message, kwargs, depth=2)
+        self._emit(LogLevel.INFO, self._format_message(message, kwargs), kwargs, depth=2)
 
     # ── Levels ──────────────────────────────────────────────
 
     def debug(self, message: str, **kwargs: Any) -> None:
-        self._emit(LogLevel.DEBUG, message, kwargs, depth=2)
+        self._emit(LogLevel.DEBUG, self._format_message(message, kwargs), kwargs, depth=2)
 
     def info(self, message: str, **kwargs: Any) -> None:
-        self._emit(LogLevel.INFO, message, kwargs, depth=2)
+        self._emit(LogLevel.INFO, self._format_message(message, kwargs), kwargs, depth=2)
 
     def warn(self, message: str, **kwargs: Any) -> None:
-        self._emit(LogLevel.WARNING, message, kwargs, depth=2)
+        self._emit(LogLevel.WARNING, self._format_message(message, kwargs), kwargs, depth=2)
 
     def warning(self, message: str, **kwargs: Any) -> None:
-        self._emit(LogLevel.WARNING, message, kwargs, depth=2)
+        self._emit(LogLevel.WARNING, self._format_message(message, kwargs), kwargs, depth=2)
 
     def error(self, message: str, **kwargs: Any) -> None:
-        self._emit(LogLevel.ERROR, message, kwargs, depth=2)
+        self._emit(LogLevel.ERROR, self._format_message(message, kwargs), kwargs, depth=2)
 
     def exception(self, message: str, **kwargs: Any) -> None:
-        self._emit(LogLevel.ERROR, message, kwargs, exc_info=sys.exc_info(), depth=2)
+        self._emit(LogLevel.ERROR, self._format_message(message, kwargs), kwargs, exc_info=sys.exc_info(), depth=2)
 
     # ── Context ─────────────────────────────────────────────
 
@@ -208,67 +280,125 @@ class Logger:
             return self._time_decorate(name_or_func, name_or_func.__qualname__, {})
 
         if name_or_func is None:
+
             def decorator(func: Callable) -> Callable:
                 return self._time_decorate(func, func.__qualname__, kwargs)
+
             return decorator
 
         raise TypeError(f"time() got unexpected argument: {name_or_func!r}")
 
     def _time_decorate(self, func: Callable, name: str, extra: dict[str, Any]) -> Callable:
         if inspect.iscoroutinefunction(func):
+
             @functools.wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 async with _TimerContext(self, name, extra):
                     return await func(*args, **kwargs)
+
             return async_wrapper
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             with _TimerContext(self, name, extra):
                 return func(*args, **kwargs)
+
         return wrapper
 
     # ── Rate-limited logging ─────────────────────────────────
 
-    def once(self, message: str, **kwargs: Any) -> None:
-        """Log only the first time this message is seen."""
+    def once(self, message: str | None = None, **kwargs: Any) -> _RateLimitedLogger | None:
+        """Log only the first time this message is seen.
+
+        Direct form (INFO)::
+            log.once("cache ready")
+
+        Chained form (any level)::
+            log.once().warn("deprecated API called")
+        """
+        if message is None:
+
+            def gate(msg: str) -> bool:
+                with _rate_lock:
+                    if msg in _once_seen:
+                        return False
+                    _once_seen.add(msg)
+                return True
+
+            return _RateLimitedLogger(self, gate)
         with _rate_lock:
             if message in _once_seen:
-                return
+                return None
             _once_seen.add(message)
-        self._emit(LogLevel.INFO, message, kwargs, depth=2)
+        self._emit(LogLevel.INFO, self._format_message(message, kwargs), kwargs, depth=2)
+        return None
 
-    def every(self, n: int, message: str, **kwargs: Any) -> None:
-        """Log every *n*th call from this call site."""
+    def every(self, n: int, message: str | None = None, **kwargs: Any) -> _RateLimitedLogger | None:
+        """Log every *n*th call from this call site.
+
+        Direct form (INFO)::
+            log.every(1000, "processing", current=i)
+
+        Chained form (any level)::
+            log.every(1000).warn("slow query", table="orders")
+        """
+        if message is None:
+
+            def gate(msg: str) -> bool:
+                key = _user_caller_key(msg)
+                with _rate_lock:
+                    count = _every_counters.get(key, 0)
+                    _every_counters[key] = count + 1
+                    return count % n == 0
+
+            return _RateLimitedLogger(self, gate)
         key = _caller_key(message, depth=2)
         with _rate_lock:
             count = _every_counters.get(key, 0)
             _every_counters[key] = count + 1
             if count % n != 0:
-                return
-        self._emit(LogLevel.INFO, message, kwargs, depth=2)
+                return None
+        self._emit(LogLevel.INFO, self._format_message(message, kwargs), kwargs, depth=2)
+        return None
 
-    def sample(self, rate: float, message: str, **kwargs: Any) -> None:
-        """Log with probability *rate* (0.0–1.0)."""
+    def sample(self, rate: float, message: str | None = None, **kwargs: Any) -> _RateLimitedLogger | None:
+        """Log with probability *rate* (0.0–1.0).
+
+        Direct form (INFO)::
+            log.sample(0.01, "request detail", method="GET")
+
+        Chained form (any level)::
+            log.sample(0.01).debug("verbose trace", payload=data)
+        """
+        if message is None:
+
+            def gate(msg: str) -> bool:
+                return random.random() < rate
+
+            return _RateLimitedLogger(self, gate)
         if random.random() >= rate:
-            return
-        self._emit(LogLevel.INFO, message, kwargs, depth=2)
+            return None
+        self._emit(LogLevel.INFO, self._format_message(message, kwargs), kwargs, depth=2)
+        return None
 
     # ── Metrics ──────────────────────────────────────────────
 
     def count(self, name: str, value: float = 1, **labels: Any) -> None:
         """Increment a counter metric."""
         from .._metrics._api import _metrics
+
         _metrics.count(name, value, **labels)
 
     def gauge(self, name: str, value: float, **labels: Any) -> None:
         """Set a gauge metric value."""
         from .._metrics._api import _metrics
+
         _metrics.gauge(name, value, **labels)
 
     def histogram(self, name: str, value: float, **labels: Any) -> None:
         """Record a histogram metric value."""
         from .._metrics._api import _metrics
+
         _metrics.histogram(name, value, **labels)
 
     # ── Progress ─────────────────────────────────────────────
@@ -283,7 +413,71 @@ class Logger:
                     p.advance()
         """
         from .._metrics._progress import ProgressTracker
+
         return ProgressTracker(self, name, total=total, log_interval=log_interval)
+
+    # ── Metrics Reporting ────────────────────────────────────
+
+    def emit_metrics(
+        self,
+        message: str = "metrics",
+        *,
+        include: list[str] | None = None,
+        prefix: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Log current metric values as a single INFO log record.
+
+        Args:
+            message: Log message (supports {placeholder} formatting).
+            include: Only include metrics with these exact names.
+            prefix: Only include metrics whose names start with this prefix.
+            **kwargs: Extra structured data merged into the log record.
+
+        If both *include* and *prefix* are given, a metric matches if it
+        satisfies either condition.  With neither, all metrics are included.
+
+        Usage::
+            log.emit_metrics()                                # all metrics
+            log.emit_metrics("health", prefix="http")         # http.* metrics
+            log.emit_metrics(include=["queue.depth", "cpu"])   # specific names
+        """
+        from .._metrics._api import _metrics
+
+        def _match(name: str) -> bool:
+            if include is None and prefix is None:
+                return True
+            if include is not None and name in include:
+                return True
+            return prefix is not None and name.startswith(prefix)
+
+        data: dict[str, Any] = {}
+
+        with _metrics._lock:
+            for (name, _labels), value in _metrics._counters.items():
+                if _match(name):
+                    data[name] = value
+            for (name, _labels), value in _metrics._gauges.items():
+                if _match(name):
+                    data[name] = value
+            for (name, _labels), values in _metrics._histograms.items():
+                if _match(name) and values:
+                    data[name] = values[-1]
+
+        data.update(kwargs)
+        self._emit(LogLevel.INFO, self._format_message(message, data), data, depth=2)
+
+    # ── Message Formatting ────────────────────────────────────
+
+    @staticmethod
+    def _format_message(message: str, kwargs: dict[str, Any]) -> str:
+        """Format message with kwargs if it contains {placeholders}."""
+        if "{" not in message:
+            return message
+        try:
+            return message.format(**kwargs)
+        except (KeyError, IndexError, ValueError):
+            return message
 
     # ── Internal ────────────────────────────────────────────
 
@@ -301,9 +495,8 @@ class Logger:
             return None
 
         # Check sampler (if configured).
-        if config.sampler is not None:
-            if not config.sampler.should_emit(level, message):
-                return None
+        if config.sampler is not None and not config.sampler.should_emit(level, message):
+            return None
 
         source = _get_source(depth + 1) if config.show_source else None
         span = get_current_span()
@@ -316,9 +509,7 @@ class Logger:
                 **data,
                 "error_type": type(exception).__name__,
                 "error_message": str(exception),
-                "error_stacktrace": "".join(
-                    traceback.format_exception(exc_info[0], exc_info[1], exc_info[2])
-                ),
+                "error_stacktrace": "".join(traceback.format_exception(exc_info[0], exc_info[1], exc_info[2])),
             }
 
         record = LogRecord(

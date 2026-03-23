@@ -1,26 +1,27 @@
 # Guide
 
-Complete walkthrough of every spektr feature.
+From zero to fully instrumented in 5 minutes. Every feature with example code and output.
 
-## Installation
+---
+
+## Install
 
 ```bash
 pip install spektr
 ```
 
-For OTLP export to collectors (Jaeger, Grafana Tempo, Datadog):
+Optional extras:
 
 ```bash
-pip install spektr[otlp]
+pip install spektr[otlp]   # OTLP export (Jaeger, Grafana Tempo, Datadog)
+pip install spektr[tqdm]   # tqdm progress bars
 ```
 
 ---
 
-## Logging
+## 1. Logging
 
-### Basic Usage
-
-`log` is a callable object. Call it directly for INFO-level messages:
+### Your first log
 
 ```python
 from spektr import log
@@ -32,84 +33,117 @@ log("server started", port=8080, env="production")
  14:23:01.123 INFO   server started  port=8080 env='production'  main.py:3
 ```
 
-Every call accepts keyword arguments as structured data. No format strings, no positional args.
+That's it. No `getLogger()`, no handlers, no YAML files.
 
-### Log Levels
+### Message formatting
+
+If the message contains `{placeholders}`, they are formatted with the kwargs:
+
+```python
+log("user {name} connected on port {port}", name="ole", port=8080)
+```
+
+```
+ 14:23:01.200 INFO   user ole connected on port 8080  name='ole' port=8080  main.py:4
+```
+
+Plain strings without `{}` are passed through unchanged. Missing keys don't crash — the message stays as-is.
+
+### Levels
 
 ```python
 log.debug("cache miss", key="user:42")
-log.info("request handled", method="GET", path="/users")
-log.warn("rate limit close", current=980, limit=1000)
-log.error("connection failed", host="db.internal", retries=3)
+log.info("request handled", method="GET", status=200)
+log.warn("disk usage high", percent=92.5)
+log.error("connection lost", host="db.internal")
+```
+
+```
+ 14:23:01.100 DEBUG  cache miss  key='user:42'  cache.py:5
+ 14:23:01.200 INFO   request handled  method='GET' status=200  api.py:12
+ 14:23:01.300 WARN   disk usage high  percent=92.5  monitor.py:8
+ 14:23:01.400 ERROR  connection lost  host='db.internal'  db.py:23
 ```
 
 `log("message")` is shorthand for `log.info("message")`.
 
-### Exception Logging
+### Exceptions
 
-Inside an `except` block, `log.exception()` logs at ERROR level with the full traceback and structured error fields:
+Inside an `except` block, `log.exception()` captures the full traceback:
 
 ```python
 try:
-    process_payment(order_id)
-except PaymentError:
-    log.exception("payment failed", order_id=order_id)
+    result = db.execute(query)
+except DatabaseError:
+    log.exception("query failed", table="orders")
 ```
 
-The record's `data` dict will contain `error_type`, `error_message`, and `error_stacktrace` alongside your custom fields.
+```
+ 14:23:02.000 ERROR  query failed  table='orders'
+                     error_type='DatabaseError' error_message='timeout'  db.py:55
+```
+
+The record's `data` dict contains `error_type`, `error_message`, and `error_stacktrace`.
 
 ---
 
-## Context
+## 2. Structured Context
 
-### Scoped Context
+### Scoped context
 
-`log.context()` adds key-value pairs to all logs within its scope:
+`log.context()` adds fields to every log within its scope — including logs from called functions:
 
 ```python
 def handle_request(request):
     with log.context(request_id=request.id, user_id=request.user.id):
-        log("validating")               # has request_id + user_id
-        result = process(request)        # called functions see the same context
-        log("done", result=result)       # still has them
+        log("validating")
+        validate(request)          # logs inside here also get request_id
+        log("saving")
+        save(request)              # and here too
 ```
 
-Context is based on `contextvars`. Each async task gets its own isolated copy — no thread-local hacks.
+```
+ 14:23:03.000 INFO   validating  request_id='abc-123' user_id=42  handler.py:3
+ 14:23:03.010 INFO   saving  request_id='abc-123' user_id=42  handler.py:5
+```
 
-Works with `async with` as well:
+Uses `contextvars` — works correctly with `async`, no thread-local hacks:
 
 ```python
-async with log.context(request_id="abc"):
-    await do_work()
+async with log.context(request_id="abc-123"):
+    await do_async_work()
 ```
 
-### Bound Loggers
+### Bound loggers
 
-`log.bind()` returns a new logger instance with permanent context:
-
-```python
-db = log.bind(component="database", host="db.prod")
-cache = log.bind(component="cache", host="redis.prod")
-
-db("query executed", table="users", rows=42)
-cache("hit", key="user:42")
-```
-
-Bound loggers can be chained:
+`log.bind()` returns a new logger with permanent fields:
 
 ```python
 db = log.bind(component="database")
-db_primary = db.bind(host="primary.db")
-db_replica = db.bind(host="replica.db")
+cache = log.bind(component="cache")
+
+db("connected", host="primary.db")
+cache("hit", key="user:42")
+```
+
+```
+ 14:23:04.000 INFO   connected  component='database' host='primary.db'  db.py:4
+ 14:23:04.001 INFO   hit  component='cache' key='user:42'  cache.py:5
+```
+
+Bound loggers are chainable:
+
+```python
+db = log.bind(component="database")
+primary = db.bind(host="primary.db")
+replica = db.bind(host="replica.db")
 ```
 
 ---
 
-## Tracing
+## 3. Tracing
 
-### Spans
-
-Spans measure the duration of operations and form a tree:
+### Spans as context manager
 
 ```python
 from spektr import trace
@@ -127,106 +161,155 @@ handle request  45.2ms  method='GET' path='/users'
 └── serialize  12.3ms
 ```
 
-### Decorator
+### Spans as decorator
 
-`@trace` auto-captures the function's arguments as span attributes:
+`@trace` auto-captures the function's arguments:
 
 ```python
 @trace
 def fetch_user(user_id: int, include_profile: bool = False):
-    ...
+    return db.get_user(user_id)
 
 fetch_user(42, include_profile=True)
-# span: fetch_user  user_id=42 include_profile=True
+```
+
+```
+fetch_user  12.3ms  user_id=42 include_profile=True
 ```
 
 `self` and `cls` are automatically excluded.
 
-### Log-Trace Correlation
-
-Logs emitted inside a span automatically receive `trace_id` and `span_id`:
+### Nested trace tree
 
 ```python
 @trace
 def handle_order(order_id: int):
-    log("fetching user")      # trace_id and span_id attached
-    user = fetch_user()
-    log("charging payment")   # same trace_id, same span_id
+    user = fetch_user(user_id=order_id)
+    charge_payment(amount=99.99)
+    send_confirmation(to="ole@test.com")
+
+handle_order(42)
 ```
 
-In JSON mode these fields appear in every log line, so your log aggregator can join them with distributed traces.
+```
+handle_order  86.5ms  order_id=42
+├── fetch_user  10.1ms  user_id=42
+├── charge_payment  50.1ms  amount=99.99
+└── send_confirmation  20.1ms  to='ole@test.com'
+```
 
-### W3C Trace Context
+### Log-trace correlation
 
-For distributed tracing across service boundaries, use `trace.inject()` and `trace.extract()`:
+Logs inside a span automatically get `trace_id` and `span_id`:
 
 ```python
-# Service A — outgoing call
-with trace("call downstream"):
-    headers = trace.inject()
-    response = httpx.get("http://service-b/api", headers=headers)
-
-# Service B — incoming request
-context = trace.extract(request.headers)
-# context.trace_id, context.parent_id, context.trace_flags
+@trace
+def handle_order(order_id: int):
+    log("fetching user")           # trace_id + span_id attached
+    user = fetch_user(order_id)
+    log("charging", amount=99.99)  # same trace
 ```
 
-The ASGI middleware does this automatically for incoming requests.
+In JSON mode these appear in every line — your log aggregator can join them with traces.
+
+### It's real OpenTelemetry
+
+Every `@trace` creates a real OTel span with W3C context propagation. Point it at a collector and traces show up in Jaeger, Grafana Tempo, or Datadog:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318 python app.py
+```
+
+No code changes needed.
 
 ---
 
-## Exception Handling
+## 4. Distributed Tracing
+
+### Inject context (outgoing)
+
+```python
+with trace("call downstream"):
+    headers = trace.inject()
+    response = httpx.get("http://service-b/api", headers=headers)
+```
+
+```python
+# headers = {"traceparent": "00-4bf92f3577b34da6...-00f067aa...-01"}
+```
+
+### Extract context (incoming)
+
+```python
+context = trace.extract(request.headers)
+if context:
+    print(context.trace_id)     # "4bf92f3577b34da6a3ce929d0e0e4736"
+    print(context.parent_id)    # "00f067aa0ba902b7"
+```
+
+The ASGI middleware does both automatically.
+
+---
+
+## 5. Exception Handling
 
 ### @log.catch
 
-Wraps a function to catch, log, and optionally re-raise exceptions:
+Wraps a function to catch, log with a rich traceback, and re-raise:
 
 ```python
 @log.catch
-def risky_operation():
-    ...  # exceptions are logged with rich traceback, then re-raised
+def process_payment(order_id: int, amount: float):
+    balance = get_balance(order_id)
+    charge(balance, amount)
 
-@log.catch(reraise=False)
-def optional_operation():
-    ...  # exceptions are logged but suppressed, function returns None
+process_payment(42, 99.99)
 ```
 
-Works with async functions and preserves the original function's name and signature.
+```
+ 14:23:05.000 ERROR  InsufficientFunds: 12.50 < 99.99  payments.py:8
 
-### install()
+ ╭── InsufficientFunds ──────────────────────────────────────╮
+ │  billing.py:17 in charge                                  │
+ │    balance = 12.50                                        │
+ │    amount  = 99.99                                        │
+ │                                                           │
+ │  InsufficientFunds: 12.50 < 99.99                         │
+ ╰───────────────────────────────────────────────────────────╯
+```
 
-Installs spektr globally:
+### Suppress exceptions
+
+```python
+@log.catch(reraise=False)
+def send_notification(user_id: int):
+    email_service.send(user_id)
+
+result = send_notification(42)  # logged but not raised — returns None
+```
+
+### Global exception hooks
 
 ```python
 import spektr
 spektr.install()
 ```
 
-This sets:
-- `sys.excepthook` — rich tracebacks with local variables for uncaught exceptions
-- `threading.excepthook` — same for exceptions in threads
-- stdlib logging bridge — routes third-party library logs (SQLAlchemy, httpx, etc.) through spektr
-
-With a web framework:
-
-```python
-from fastapi import FastAPI
-import spektr
-
-app = FastAPI()
-spektr.install(app)  # also adds SpektrMiddleware automatically
-```
+Now every uncaught exception gets a rich traceback with local variables — in the main thread, in child threads, and in the ASGI error handler.
 
 ---
 
-## Timing
+## 6. Timing
 
-### Context Manager
+### Context manager
 
 ```python
 with log.time("db query", table="users"):
     rows = db.fetch_all()
-# logs: "db query"  duration_ms=42.1  table='users'
+```
+
+```
+ 14:23:06.000 INFO   db query  duration_ms=42.1 table='users'  query.py:3
 ```
 
 ### Decorator
@@ -235,213 +318,300 @@ with log.time("db query", table="users"):
 @log.time
 def process_batch():
     ...
+```
 
-@log.time("custom name")
-def handler():
+```
+ 14:23:07.000 INFO   process_batch  duration_ms=1234.5  batch.py:5
+```
+
+### Named decorator
+
+```python
+@log.time("payment processing")
+def handle_charge(amount: float):
     ...
 ```
 
-Both forms support async functions.
-
----
-
-## Rate Limiting
-
-Control log volume without losing visibility:
-
-```python
-# Log only the first occurrence of this message
-log.once("cache initialized")
-
-# Log every 1000th call from this specific call site
-for item in items:
-    log.every(1000, "processing", current=item.id)
-
-# Log with 1% probability
-log.sample(0.01, "detailed debug info", payload=data)
+```
+ 14:23:08.000 INFO   payment processing  duration_ms=502.3  payments.py:8
 ```
 
-These all log at INFO level and accept arbitrary keyword arguments like regular `log()` calls.
+All forms work with async.
 
 ---
 
-## Metrics
+## 7. Rate Limiting
 
-### Counters, Gauges, Histograms
+### First occurrence only
+
+```python
+for i in range(1000):
+    log.once("cache initialized")
+```
+
+```
+ 14:23:09.000 INFO   cache initialized  app.py:2
+```
+
+### Every Nth call
+
+```python
+for i in range(10000):
+    log.every(1000, "processing", current=i)
+```
+
+```
+ 14:23:10.000 INFO   processing  current=0  worker.py:2
+ 14:23:10.500 INFO   processing  current=1000  worker.py:2
+ 14:23:11.000 INFO   processing  current=2000  worker.py:2
+```
+
+### Probabilistic sampling
+
+```python
+for request in requests:
+    log.sample(0.01, "request detail", method=request.method)
+```
+
+~1% of calls produce output.
+
+### Chaining for custom levels
+
+Call without a message to chain a severity level:
+
+```python
+log.once().warn("deprecated API called")
+log.every(1000).debug("heartbeat")
+log.sample(0.01).debug("verbose trace", payload=data)
+```
+
+```
+ 14:23:11.000 WARN   deprecated API called  app.py:2
+```
+
+Store for reuse:
+
+```python
+sampled = log.sample(0.01)
+for request in requests:
+    sampled.debug("request detail", method=request.method)
+```
+
+---
+
+## 8. Metrics
+
+### Counters
 
 ```python
 log.count("http.requests", method="GET", path="/users")
-log.gauge("queue.depth", len(queue), queue="ingest")
-log.histogram("request.duration_ms", duration, method="POST")
+log.count("http.requests", method="POST", path="/orders")
 ```
 
-Metrics are stored in an in-memory backend by default. An OpenTelemetry metrics backend is available for production export.
+### Gauges
 
-### Progress Tracking
+```python
+log.gauge("queue.depth", len(queue), queue="ingest")
+log.gauge("connections.active", 42, pool="primary")
+```
 
-For long-running batch operations:
+### Histograms
+
+```python
+log.histogram("request.duration_ms", 123.4, method="POST")
+log.histogram("response.size_bytes", 4096, endpoint="/api/users")
+```
+
+### Logging metrics
+
+Metrics are stored in-memory. To output them as a log line, use `emit_metrics()`:
+
+```python
+log.count("http.requests", 150)
+log.count("http.errors", 3)
+log.gauge("queue.depth", 42)
+
+log.emit_metrics()
+```
+
+```
+ 14:23:12.500 INFO   metrics  http.requests=150 http.errors=3 queue.depth=42  app.py:5
+```
+
+Filter by group or specific names:
+
+```python
+log.emit_metrics("http status", prefix="http")          # only http.* metrics
+log.emit_metrics(include=["queue.depth", "cpu.usage"])   # specific names
+```
+
+```
+ 14:23:13.000 INFO   http status  http.requests=150 http.errors=3  monitor.py:3
+```
+
+### Progress tracking
 
 ```python
 with log.progress("import users", total=10000) as p:
     for user in users:
         process(user)
-        p.advance()          # advance by 1
-        # or p.advance(100)  # advance by N
-        # or p.set(5000)     # jump to absolute position
+        p.advance()
 ```
 
-Progress is logged at configurable intervals (default: once per second) with `current`, `total`, `percent`, and `rate` fields. A final summary with total duration is always logged on exit.
+```
+ 14:23:12.000 INFO   import users  current=0 total=10000 percent=0.0 rate=0.0  import.py:1
+ 14:23:13.000 INFO   import users  current=3200 total=10000 percent=32.0 rate=3200.0  import.py:1
+ 14:23:14.000 INFO   import users  current=6800 total=10000 percent=68.0 rate=3600.0  import.py:1
+ 14:23:14.800 INFO   import users completed  current=10000 total=10000 percent=100.0 duration_ms=2800.0  import.py:1
+```
 
-```python
-# Custom interval
-with log.progress("export", total=50000, log_interval=5.0) as p:
-    ...
+With `tqdm` installed (auto-detected):
+
+```
+import users: 100%|████████████████████████| 10000/10000 [00:02<00:00, 3571.43it/s]
+ 14:23:14.800 INFO   import users completed  current=10000 total=10000 percent=100.0 duration_ms=2800.0  import.py:1
 ```
 
 ---
 
-## ASGI Middleware
+## 9. FastAPI / Starlette
 
-### Setup
+### One-line setup
+
+```python
+from fastapi import FastAPI
+import spektr
+
+app = FastAPI()
+spektr.install(app)
+```
+
+Every request automatically gets:
+- Unique `request_id` in all logs
+- Trace span for the full request
+- W3C context extraction from incoming headers
+- Completion log with method, path, status, and duration
+- `http.requests.total` counter and `http.request.duration_ms` histogram
+
+```
+ 14:23:15.000 INFO   GET /users 200 12ms  request_id='a1b2c3d4'  server.py:15
+ 14:23:15.100 INFO   POST /orders 201 45ms  request_id='e5f6g7h8'  server.py:15
+ 14:23:15.200 ERROR  GET /fail 500 2ms  request_id='i9j0k1l2'  server.py:15
+```
+
+### Manual middleware
 
 ```python
 from spektr import SpektrMiddleware
 
-# Wrap any ASGI app
-app = SpektrMiddleware(app)
-
-# Or add via framework API
-app.add_middleware(SpektrMiddleware)  # FastAPI / Starlette
+app.add_middleware(SpektrMiddleware)
+# or: app = SpektrMiddleware(app)
 ```
 
-### What It Does
-
-For every HTTP request the middleware automatically:
-
-1. Generates a unique `request_id` (UUID4) and adds it to the log context
-2. Creates a trace span covering the full request lifecycle
-3. Extracts incoming W3C `traceparent` headers for distributed tracing
-4. Logs a completion message with method, path, status code, and duration
-5. Records an `http.requests.total` counter and `http.request.duration_ms` histogram
-
-### Health Check
-
-Configure a health endpoint that bypasses instrumentation:
+### Health check
 
 ```python
-import spektr
 spektr.configure(health_path="/healthz")
+# GET /healthz → 200 {"status": "ok", "service": "order-api"}
 ```
 
-Returns `{"status": "ok", "service": "<your-service-name>"}` with HTTP 200.
+### Stdlib bridge
+
+Third-party libraries using `logging.getLogger()` (uvicorn, SQLAlchemy, httpx) automatically route through spektr after `install()`:
+
+```python
+import logging
+logger = logging.getLogger("sqlalchemy.engine")
+logger.info("SELECT * FROM users")
+```
+
+```
+ 14:23:16.000 INFO   SELECT * FROM users  logger='sqlalchemy.engine'  connection.py:42
+```
 
 ---
 
-## Configuration
+## 10. Production
 
-### Environment Variables
+### Dev → Prod switch
 
-spektr auto-detects its environment. No configuration required for basic usage.
+In dev you get colored console output. Set one env var and it switches to structured JSON with full OTel export:
 
-| Variable | Effect |
-|---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint, auto-switches to JSON mode |
-| `SPEKTR_ENDPOINT` | Same (spektr-specific alias) |
-| `SPEKTR_JSON=1` | Force JSON output without an endpoint |
-| `NO_COLOR` | Respects [no-color.org](https://no-color.org) |
-| `SPEKTR_LOG_LEVEL` | Minimum level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
-| `SPEKTR_SERVICE` | Service name for OTel resource |
-| `OTEL_SERVICE_NAME` | Same (standard OTel env var) |
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318 python app.py
+```
 
-### Runtime Configuration
+```json
+{"ts":"2026-03-22T14:23:01+00:00","level":"info","msg":"order created","order_id":42,"trace_id":"4bf92f35...","span_id":"00f067aa..."}
+```
+
+### Runtime configuration
 
 ```python
 import spektr
-from spektr import RateLimitSampler
 from spektr._types import LogLevel
 
 spektr.configure(
     service="order-api",
     endpoint="http://collector:4318",
     min_level=LogLevel.WARNING,
-    redact=["password", "secret", "token", "authorization"],
-    sampler=RateLimitSampler(per_second=100),
+    redact=["password", "secret", "token"],
     health_path="/healthz",
 )
 ```
 
-### Sensitive Data Redaction
+### Custom sinks
 
-Keys matching any redaction pattern are replaced with `***` in all output (console and JSON):
-
-```python
-log("auth attempt", password="secret123", api_key="sk-abc")
-# output: auth attempt  password='***' api_key='***'
-```
-
-Default patterns: `password`, `secret`, `token`, `authorization`, `api_key`, `apikey`. Override via `configure(redact=[...])`.
-
----
-
-## Pluggable Architecture
-
-### Custom Sinks
-
-Implement the `Sink` protocol to route logs to any destination:
+Route logs to any destination:
 
 ```python
-from spektr import configure
-
 class DatadogSink:
     def write(self, record):
-        datadog_client.log(
-            record.message,
-            level=record.level.name,
-            **record.data,
-        )
+        datadog_client.log(record.message, level=record.level.name, **record.data)
 
     def flush(self):
         datadog_client.flush()
 
-configure(sinks=[DatadogSink()])
+spektr.configure(sinks=[DatadogSink()])
 ```
 
-Multiple sinks receive every record:
+### Sampling
+
+Control log volume in production:
 
 ```python
-configure(sinks=[DatadogSink(), PagerDutySink(), FileSink("/var/log/app.jsonl")])
-```
+from spektr import RateLimitSampler, CompositeSampler
 
-When `capture()` is active (in tests), it intercepts records before they reach sinks.
+spektr.configure(sampler=RateLimitSampler(per_second=100))
 
-### Custom Samplers
-
-Implement the `Sampler` protocol to control which logs are emitted:
-
-```python
-from spektr import configure, CompositeSampler, RateLimitSampler
-from spektr._types import LogLevel
-
-class WarningAndAbove:
-    def should_emit(self, level, message):
-        return level >= LogLevel.WARNING
-
-# Chain samplers — all must agree for a record to pass
-configure(sampler=CompositeSampler(
+# Or chain samplers:
+spektr.configure(sampler=CompositeSampler(
     WarningAndAbove(),
     RateLimitSampler(per_second=50),
 ))
 ```
 
-The built-in `RateLimitSampler` uses a token bucket and always passes ERROR-level messages regardless of the rate limit.
+### Redaction
+
+Sensitive fields are automatically replaced with `***`:
+
+```python
+log("auth", password="secret123", api_key="sk-abc")
+```
+
+```
+ 14:23:17.000 INFO   auth  password='***' api_key='***'  auth.py:3
+```
+
+Default patterns: `password`, `secret`, `token`, `authorization`, `api_key`, `apikey`.
 
 ---
 
-## Testing
+## 11. Testing
 
 ### capture()
 
-`capture()` intercepts log records without producing any output:
+Intercept log records without output. No mocks needed.
 
 ```python
 from spektr import capture, log
@@ -455,9 +625,7 @@ def test_order_created():
     assert logs[0].data["order_id"] == 42
 ```
 
-### Substring Search
-
-`capture()` supports the `in` operator for quick message assertions:
+### Substring search
 
 ```python
 with capture() as logs:
@@ -468,32 +636,34 @@ assert "order created" in logs
 
 ### Filtering
 
-Filter captured records by level or data fields:
-
 ```python
+from spektr._types import LogLevel
+
 with capture() as logs:
     log.debug("verbose")
     log.error("critical", code=500)
 
 errors = logs.filter(level=LogLevel.ERROR)
 assert len(errors) == 1
-
-by_code = logs.filter(code=500)
-assert len(by_code) == 1
 ```
 
-### Record Fields
+### Trace correlation in tests
 
-Each captured `LogRecord` has these fields:
+```python
+from spektr import capture, log, trace
 
-| Field | Type | Description |
-|---|---|---|
-| `message` | `str` | The log message |
-| `level` | `LogLevel` | `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
-| `data` | `dict` | Structured key-value data from the call |
-| `context` | `dict` | Context from `log.context()` and `log.bind()` |
-| `timestamp` | `float` | Unix timestamp |
-| `source` | `SourceLocation` | `file`, `line`, `function` of the caller |
-| `trace_id` | `str \| None` | OTel trace ID if inside a span |
-| `span_id` | `str \| None` | OTel span ID if inside a span |
-| `exc_info` | `tuple \| None` | Exception triple if `log.exception()` or `@log.catch` |
+def test_trace_correlation():
+    with capture() as logs:
+        with trace("request"):
+            log("inside span")
+
+    assert logs[0].trace_id is not None
+    assert logs[0].span_id is not None
+```
+
+---
+
+## Next Steps
+
+- [API Reference](api.md) — every method with signatures and parameter tables
+- [Architecture](architecture.md) — internal design, data flow, dependency layers

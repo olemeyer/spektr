@@ -273,7 +273,7 @@ class TestHttpMethods:
 class TestInstallWithStarlette:
     def test_install_adds_middleware_to_starlette(self):
         """spektr._install_framework detects Starlette and adds middleware."""
-        from spektr._exceptions import _install_framework
+        from spektr._integrations._exceptions import _install_framework
 
         app = Starlette(routes=[Route("/", lambda r: PlainTextResponse("OK"))])
         _install_framework(app)

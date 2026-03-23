@@ -1,5 +1,7 @@
 """OpenTelemetry integration – tracing, metrics, and propagation."""
 
+# Proxy mutable module state for tests that inspect _provider / _tracer.
+from . import _tracing as _tracing_module
 from ._tracing import (
     activate_span,
     deactivate_span,
@@ -10,9 +12,6 @@ from ._tracing import (
     shutdown,
     start_span,
 )
-
-# Proxy mutable module state for tests that inspect _provider / _tracer.
-from . import _tracing as _tracing_module
 
 
 def __getattr__(name: str):

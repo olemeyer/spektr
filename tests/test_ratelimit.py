@@ -3,7 +3,7 @@
 import threading
 
 from spektr import capture, log
-from spektr._logger import _every_counters, _once_seen, _rate_lock
+from spektr._core._logger import _every_counters, _once_seen, _rate_lock
 from spektr._types import LogLevel
 
 
@@ -221,3 +221,182 @@ class TestSample:
 
         assert logs[0].context["component"] == "db"
         assert logs[0].data["table"] == "users"
+
+
+# ── Rate-Limit Chaining ────────────────────────────────────
+
+
+class TestRateLimitChaining:
+    def setup_method(self):
+        _reset_rate_state()
+
+    def test_once_chained_warn(self):
+        with capture() as logs:
+            log.once().warn("deprecated API called")
+            log.once().warn("deprecated API called")
+
+        assert len(logs) == 1
+        assert logs[0].level == LogLevel.WARNING
+        assert logs[0].message == "deprecated API called"
+
+    def test_once_chained_debug(self):
+        with capture() as logs:
+            log.once().debug("one-time debug info")
+
+        assert logs[0].level == LogLevel.DEBUG
+
+    def test_once_chained_error(self):
+        with capture() as logs:
+            log.once().error("critical config missing")
+
+        assert logs[0].level == LogLevel.ERROR
+
+    def test_once_chained_warning_alias(self):
+        with capture() as logs:
+            log.once().warning("alias test")
+
+        assert logs[0].level == LogLevel.WARNING
+
+    def test_once_chained_with_kwargs(self):
+        with capture() as logs:
+            log.once().warn("stale cache", backend="redis")
+
+        assert logs[0].data["backend"] == "redis"
+
+    def test_once_chained_with_formatting(self):
+        with capture() as logs:
+            log.once().info("started {service}", service="api")
+
+        assert logs[0].message == "started api"
+
+    def test_once_chained_deduplicates(self):
+        with capture() as logs:
+            log.once().warn("msg")
+            log.once().error("msg")  # same message, should be dropped
+
+        assert len(logs) == 1
+        assert logs[0].level == LogLevel.WARNING
+
+    def test_once_direct_still_works(self):
+        with capture() as logs:
+            log.once("msg", key="val")
+
+        assert len(logs) == 1
+        assert logs[0].level == LogLevel.INFO
+        assert logs[0].data["key"] == "val"
+
+    def test_every_chained_warn(self):
+        with capture() as logs:
+            for _ in range(6):
+                log.every(3).warn("slow query")
+
+        assert len(logs) == 2
+        assert all(r.level == LogLevel.WARNING for r in logs)
+
+    def test_every_chained_debug(self):
+        with capture() as logs:
+            for _ in range(3):
+                log.every(3).debug("heartbeat")
+
+        assert len(logs) == 1
+        assert logs[0].level == LogLevel.DEBUG
+
+    def test_every_chained_with_kwargs(self):
+        with capture() as logs:
+            log.every(1).warn("query", table="orders")
+
+        assert logs[0].data["table"] == "orders"
+
+    def test_every_direct_still_works(self):
+        with capture() as logs:
+            for _ in range(6):
+                log.every(3, "batch")
+
+        assert len(logs) == 2
+        assert all(r.level == LogLevel.INFO for r in logs)
+
+    def test_every_chained_formatting(self):
+        with capture() as logs:
+            for i in range(6):
+                log.every(3).info("batch {i}", i=i)
+
+        assert len(logs) == 2
+        assert logs[0].message == "batch 0"
+        assert logs[1].message == "batch 3"
+
+    def test_sample_chained_debug(self):
+        with capture() as logs:
+            for _ in range(100):
+                log.sample(1.0).debug("verbose trace")
+
+        assert len(logs) == 100
+        assert all(r.level == LogLevel.DEBUG for r in logs)
+
+    def test_sample_chained_warn(self):
+        with capture() as logs:
+            log.sample(1.0).warn("retrying", attempt=3)
+
+        assert logs[0].level == LogLevel.WARNING
+        assert logs[0].data["attempt"] == 3
+
+    def test_sample_chained_zero_rate(self):
+        with capture() as logs:
+            for _ in range(100):
+                log.sample(0.0).error("never")
+
+        assert len(logs) == 0
+
+    def test_sample_direct_still_works(self):
+        with capture() as logs:
+            log.sample(1.0, "msg", key="val")
+
+        assert logs[0].level == LogLevel.INFO
+        assert logs[0].data["key"] == "val"
+
+    def test_chained_callable(self):
+        """log.once()("msg") should work like log.once().info("msg")."""
+        with capture() as logs:
+            log.once()("shorthand")
+
+        assert len(logs) == 1
+        assert logs[0].level == LogLevel.INFO
+
+    def test_chained_on_bound_logger(self):
+        db = log.bind(component="db")
+        with capture() as logs:
+            db.once().warn("connection pool exhausted")
+
+        assert logs[0].level == LogLevel.WARNING
+        assert logs[0].context["component"] == "db"
+
+    def test_reusable_rate_limited_logger(self):
+        """Storing the rate-limited logger should work."""
+        sampled = log.sample(1.0)
+        with capture() as logs:
+            sampled.debug("a")
+            sampled.debug("b")
+            sampled.debug("c")
+
+        assert len(logs) == 3
+        assert all(r.level == LogLevel.DEBUG for r in logs)
+
+
+# ── Caller Key ──────────────────────────────────────────────
+
+
+class TestCallerKey:
+    def test_caller_key_fallback_on_deep_depth(self):
+        """_caller_key should return fallback on frame error."""
+        from spektr._core._logger import _caller_key
+
+        key = _caller_key("test", depth=9999)
+        assert key == ("test", "", 0)
+
+    def test_user_caller_key_walks_past_spektr_frames(self):
+        """_user_caller_key should walk up past spektr frames."""
+        from spektr._core._logger import _user_caller_key
+
+        key = _user_caller_key("test")
+        assert key[0] == "test"
+        assert key[1] != ""  # should have a real filename
+        assert key[2] > 0  # should have a real line number

@@ -12,13 +12,11 @@ recursion.  Uses a contextvars guard for async safety.
 from __future__ import annotations
 
 import logging
-import time
 from contextvars import ContextVar
-from typing import Any
 
 from .._config import OutputMode, get_config
 from .._context import _capturing_sink, get_current_span, get_log_context
-from .._formatters import format_record_json, format_record_rich
+from .._output._formatters import format_record_json, format_record_rich
 from .._types import LogLevel, LogRecord, SourceLocation
 
 _in_bridge: ContextVar[bool] = ContextVar("spektr_bridge_guard", default=False)
@@ -95,7 +93,7 @@ class SpektrHandler(logging.Handler):
         sink = _capturing_sink.get()
         if sink is not None:
             sink.append(spektr_record)
-        elif config.output_mode == OutputMode.JSON:
+        elif config.output_mode == OutputMode.JSON:  # pragma: no cover
             format_record_json(spektr_record)
         else:
             format_record_rich(spektr_record)

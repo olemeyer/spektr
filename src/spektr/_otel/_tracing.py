@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from .._repr import safe_str
 from opentelemetry import context as otel_context
 from opentelemetry import trace as otel_trace
 from opentelemetry.sdk.resources import Resource
@@ -29,6 +28,8 @@ from opentelemetry.sdk.trace.export import (
     SpanExporter,
 )
 from opentelemetry.trace import StatusCode, set_span_in_context
+
+from .._repr import safe_str
 
 # Module-level state – managed exclusively through setup() / shutdown().
 _provider: TracerProvider | None = None
@@ -85,7 +86,7 @@ def setup(
             )
 
             exporter = OTLPSpanExporter(endpoint=endpoint.rstrip("/") + "/v1/traces")
-        except ImportError:
+        except ImportError:  # pragma: no cover
             pass  # OTLP package not installed – spans are created but not exported.
 
     if exporter is not None:

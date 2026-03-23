@@ -405,7 +405,7 @@ class TestTimingIntegration:
 class TestRateLimitIntegration:
     def test_once_inside_context(self):
         """log.once should inherit context."""
-        from spektr._logger import _once_seen, _rate_lock
+        from spektr._core._logger import _once_seen, _rate_lock
 
         with _rate_lock:
             _once_seen.clear()
@@ -425,7 +425,7 @@ class TestRateLimitIntegration:
         assert logs[0].trace_id is not None
 
     def test_every_with_structured_data(self):
-        from spektr._logger import _every_counters, _rate_lock
+        from spektr._core._logger import _every_counters, _rate_lock
 
         with _rate_lock:
             _every_counters.clear()
@@ -442,7 +442,7 @@ class TestRateLimitIntegration:
 class TestRedactionIntegration:
     def test_redaction_with_bound_logger(self):
         """Bound logger context should also be redacted in output."""
-        from spektr._formatters import format_record_json
+        from spektr._output._formatters import format_record_json
 
         secret_log = log.bind(api_key="sk-123")
         with capture() as logs:
@@ -453,7 +453,7 @@ class TestRedactionIntegration:
 
     def test_redaction_in_timing_data(self, capsys):
         """Sensitive keys in log.time kwargs should be redacted in output."""
-        from spektr._formatters import format_record_json
+        from spektr._output._formatters import format_record_json
         from spektr._types import LogLevel, LogRecord
 
         record = LogRecord(

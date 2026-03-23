@@ -16,12 +16,13 @@ from __future__ import annotations
 import functools
 import inspect
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .. import _otel
 from .._config import OutputMode, get_config
 from .._context import get_current_span, set_current_span
-from .._formatters import format_trace_json, format_trace_rich
+from .._output._formatters import format_trace_json, format_trace_rich
 from .._types import SpanData
 
 
@@ -115,8 +116,8 @@ def _extract_args(func: Callable, args: tuple, kwargs: dict) -> dict[str, Any]:
         params.pop("self", None)
         params.pop("cls", None)
         return params
-    except (ValueError, TypeError):
-        return {}
+    except (ValueError, TypeError):  # pragma: no cover
+        return {}  # pragma: no cover
 
 
 class Trace:

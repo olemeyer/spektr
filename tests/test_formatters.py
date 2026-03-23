@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from spektr._config import OutputMode, configure
-from spektr._formatters import (
+from spektr._output._formatters import (
     _format_duration,
     _format_value,
     format_record_json,
@@ -226,14 +226,14 @@ class TestJSONTraceFormat:
 
 class TestRichFormat:
     def test_rich_does_not_crash_on_basic_record(self):
-        from spektr._formatters import format_record_rich
+        from spektr._output._formatters import format_record_rich
 
         record = _make_record(message="hello", data={"key": "val"})
         # Should not raise
         format_record_rich(record)
 
     def test_rich_does_not_crash_on_exception(self):
-        from spektr._formatters import format_record_rich
+        from spektr._output._formatters import format_record_rich
 
         try:
             raise ValueError("test")
@@ -243,20 +243,48 @@ class TestRichFormat:
         format_record_rich(record)
 
     def test_rich_does_not_crash_on_no_source(self):
-        from spektr._formatters import format_record_rich
+        from spektr._output._formatters import format_record_rich
 
         record = _make_record(source=None)
         format_record_rich(record)
 
     def test_rich_trace_tree_does_not_crash(self):
-        from spektr._formatters import format_trace_rich
+        from spektr._output._formatters import format_trace_rich
 
         child = _make_span(name="child", parent_id="p", start_time=100.01, end_time=100.02)
         root = _make_span(name="root", children=[child])
         format_trace_rich(root)
 
     def test_rich_trace_tree_with_error(self):
-        from spektr._formatters import format_trace_rich
+        from spektr._output._formatters import format_trace_rich
 
         span = _make_span(name="fail", status="error", error=RuntimeError("boom"))
         format_trace_rich(span)
+
+
+# ── Rich Traceback Rendering ───────────────────────────────
+
+
+class TestRichTraceback:
+    def test_exception_traceback_frame_walking(self):
+        """Traceback frame walking should skip spektr frames."""
+        from io import StringIO
+        from unittest.mock import patch
+
+        from spektr import log
+        from spektr._config import Config, OutputMode
+
+        @log.catch(reraise=False)
+        def failing():
+            raise ValueError("frame walk test")
+
+        old_config = config_module._config
+        try:
+            config_module._config = Config(output_mode=OutputMode.RICH, show_source=True)
+            with patch("spektr._output._formatters._get_console") as mock_fn:
+                mock_fn.return_value = __import__("rich.console", fromlist=["Console"]).Console(
+                    file=StringIO(), width=80
+                )
+                failing()  # triggers rich traceback rendering
+        finally:
+            config_module._config = old_config

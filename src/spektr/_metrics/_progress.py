@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 try:
     from tqdm.auto import tqdm as _tqdm
-except ImportError:
+except ImportError:  # pragma: no cover
     _tqdm = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
@@ -31,6 +31,7 @@ def _use_tqdm() -> bool:
     if _tqdm is None:
         return False
     from .._config import OutputMode, get_config
+
     config = get_config()
     if config.output_mode != OutputMode.RICH:
         return False
@@ -99,6 +100,7 @@ class ProgressTracker:
             data["total"] = self._total
             data["percent"] = round(self._current / self._total * 100, 1) if self._total > 0 else 100.0
         from .._types import LogLevel
+
         self._logger._emit(LogLevel.INFO, f"{self._name} completed", data)
 
     async def __aenter__(self) -> ProgressTracker:
@@ -146,4 +148,5 @@ class ProgressTracker:
         if elapsed > 0 and self._current > 0:
             data["rate"] = round(self._current / elapsed, 1)
         from .._types import LogLevel
+
         self._logger._emit(LogLevel.INFO, f"{self._name} progress", data)

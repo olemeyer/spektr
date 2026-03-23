@@ -7,7 +7,7 @@ Can be integrated into SpektrMiddleware via ``health_path`` parameter.
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from collections.abc import Callable
 
 
 async def health_check(scope: dict, receive: Callable, send: Callable) -> None:
@@ -15,20 +15,26 @@ async def health_check(scope: dict, receive: Callable, send: Callable) -> None:
     from .._config import get_config
 
     config = get_config()
-    body = json.dumps({
-        "status": "ok",
-        "service": config.service,
-    }).encode()
+    body = json.dumps(
+        {
+            "status": "ok",
+            "service": config.service,
+        }
+    ).encode()
 
-    await send({
-        "type": "http.response.start",
-        "status": 200,
-        "headers": [
-            [b"content-type", b"application/json"],
-            [b"content-length", str(len(body)).encode()],
-        ],
-    })
-    await send({
-        "type": "http.response.body",
-        "body": body,
-    })
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [
+                [b"content-type", b"application/json"],
+                [b"content-length", str(len(body)).encode()],
+            ],
+        }
+    )
+    await send(
+        {
+            "type": "http.response.body",
+            "body": body,
+        }
+    )

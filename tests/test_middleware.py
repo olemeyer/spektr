@@ -353,7 +353,7 @@ class TestMiddlewareInstallAsgi:
         app = FakeApp()
         app.__class__.__name__ = "FastAPI"
 
-        from spektr._exceptions import _install_framework
+        from spektr._integrations._exceptions import _install_framework
         _install_framework(app)
 
         assert len(added) == 1
@@ -370,7 +370,7 @@ class TestMiddlewareInstallAsgi:
         app = FakeStarlette()
         app.__class__.__name__ = "Starlette"
 
-        from spektr._exceptions import _install_framework
+        from spektr._integrations._exceptions import _install_framework
         _install_framework(app)
 
         assert len(added) == 1
@@ -385,5 +385,41 @@ class TestMiddlewareInstallAsgi:
         app = FakeDjango()
         app.__class__.__name__ = "Django"
 
-        from spektr._exceptions import _install_framework
+        from spektr._integrations._exceptions import _install_framework
         _install_framework(app)  # should not raise
+
+
+class TestMiddlewareContextExtraction:
+    def test_malformed_traceparent_handled_gracefully(self):
+        """Middleware should handle extract_context failures gracefully."""
+        from starlette.applications import Starlette
+        from starlette.requests import Request
+        from starlette.responses import PlainTextResponse
+        from starlette.routing import Route
+        from starlette.testclient import TestClient
+
+        async def homepage(request: Request):
+            return PlainTextResponse("OK")
+
+        app = Starlette(routes=[Route("/", homepage)])
+        app.add_middleware(SpektrMiddleware)
+
+        with capture():
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get("/", headers={"traceparent": "invalid"})
+            assert response.status_code == 200
+
+
+class TestMiddlewareMetrics:
+    def test_record_metrics_records_counter_and_histogram(self):
+        """_record_metrics should record request count and latency."""
+        from spektr._integrations._middleware import SpektrMiddleware as MW
+        from spektr._metrics._api import _metrics as m
+
+        middleware = MW.__new__(MW)
+        middleware.app = None
+
+        middleware._record_metrics("GET", "/test", 200, 42.0)
+
+        assert m.get_counter("http.requests.total", method="GET", path="/test", status="200") >= 1
+        m.reset()

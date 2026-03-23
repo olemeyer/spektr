@@ -160,7 +160,7 @@ class TestCatchDecorator:
 class TestInstall:
     def test_install_sets_excepthook(self):
         import spektr._integrations._exceptions as exc_module
-        from spektr._exceptions import _excepthook
+        from spektr._integrations._exceptions import _excepthook
 
         exc_module._installed = False
         sys.excepthook = sys.__excepthook__  # reset to Python default
@@ -188,7 +188,7 @@ class TestInstall:
 
     def test_install_with_none_app(self):
         import spektr._integrations._exceptions as exc_module
-        from spektr._exceptions import _excepthook
+        from spektr._integrations._exceptions import _excepthook
 
         exc_module._installed = False
         sys.excepthook = sys.__excepthook__  # reset to Python default
@@ -202,7 +202,7 @@ class TestInstall:
     def test_install_sets_threading_excepthook(self):
         import threading
         import spektr._integrations._exceptions as exc_module
-        from spektr._exceptions import _threading_excepthook
+        from spektr._integrations._exceptions import _threading_excepthook
 
         old_hook = sys.excepthook
         try:
@@ -217,7 +217,7 @@ class TestInstall:
         """install() should add SpektrHandler to root logger."""
         import logging
         import spektr._integrations._exceptions as exc_module
-        from spektr._bridge import SpektrHandler
+        from spektr._integrations._bridge import SpektrHandler
 
         old_hook = sys.excepthook
         root = logging.getLogger()
@@ -256,7 +256,7 @@ class TestInstall:
 
 class TestInstallFramework:
     def test_unknown_class_name_no_error(self):
-        from spektr._exceptions import _install_framework
+        from spektr._integrations._exceptions import _install_framework
 
         class Flask:
             pass
@@ -265,8 +265,8 @@ class TestInstallFramework:
         _install_framework(app)  # Should not raise
 
     def test_starlette_adds_middleware(self):
-        from spektr._exceptions import _install_framework
-        from spektr._middleware import SpektrMiddleware
+        from spektr._integrations._exceptions import _install_framework
+        from spektr._integrations._middleware import SpektrMiddleware
 
         added = []
 
@@ -325,3 +325,57 @@ class TestCatchEdgeCases:
             variadic(1, 2, 3, key="val")
 
         assert "args=3" in logs[0].message
+
+
+# ── Exception Hooks ─────────────────────────────────────────
+
+
+class TestExceptHook:
+    def test_excepthook_runs_without_crash(self):
+        """_excepthook should render without crashing."""
+        import io
+        import threading
+        from unittest.mock import patch
+
+        from spektr._integrations._exceptions import _excepthook
+
+        try:
+            raise ValueError("test hook")
+        except ValueError:
+            exc_type, exc_val, exc_tb = sys.exc_info()
+
+            with patch("spektr._output._formatters._get_console") as mock_console:
+                mock_console.return_value = __import__("rich.console", fromlist=["Console"]).Console(
+                    file=io.StringIO(), width=80
+                )
+                _excepthook(exc_type, exc_val, exc_tb)
+
+    def test_threading_excepthook_runs(self):
+        """_threading_excepthook should call _excepthook."""
+        import io
+        import threading
+        from unittest.mock import patch
+
+        from spektr._integrations._exceptions import _threading_excepthook
+
+        try:
+            raise RuntimeError("thread error")
+        except RuntimeError:
+            exc_type, exc_val, exc_tb = sys.exc_info()
+
+            args = threading.ExceptHookArgs((exc_type, exc_val, exc_tb, None))
+
+            with patch("spektr._output._formatters._get_console") as mock_console:
+                mock_console.return_value = __import__("rich.console", fromlist=["Console"]).Console(
+                    file=io.StringIO(), width=80
+                )
+                _threading_excepthook(args)
+
+    def test_threading_excepthook_skips_none(self):
+        """_threading_excepthook should skip if exc_type is None."""
+        import threading
+
+        from spektr._integrations._exceptions import _threading_excepthook
+
+        args = threading.ExceptHookArgs((None, None, None, None))
+        _threading_excepthook(args)  # should not crash

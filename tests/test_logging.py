@@ -412,3 +412,131 @@ class TestCapture:
         # This should NOT raise – it goes to the real formatter
         log("not captured")
         assert len(logs) == 1
+
+
+# ── Message Formatting ─────────────────────────────────────
+
+
+class TestMessageFormatting:
+    def test_format_with_kwargs(self):
+        with capture() as logs:
+            log("user {name} connected", name="ole")
+
+        assert logs[0].message == "user ole connected"
+        assert logs[0].data["name"] == "ole"
+
+    def test_format_multiple_placeholders(self):
+        with capture() as logs:
+            log("{method} {path} completed", method="GET", path="/users")
+
+        assert logs[0].message == "GET /users completed"
+        assert logs[0].data["method"] == "GET"
+        assert logs[0].data["path"] == "/users"
+
+    def test_no_placeholders_unchanged(self):
+        with capture() as logs:
+            log("plain message", key="value")
+
+        assert logs[0].message == "plain message"
+
+    def test_missing_placeholder_key_keeps_original(self):
+        with capture() as logs:
+            log("user {name} on {host}", name="ole")
+
+        # {host} not in kwargs — message stays as-is
+        assert logs[0].message == "user {name} on {host}"
+
+    def test_format_with_numbers(self):
+        with capture() as logs:
+            log("processed {count} items in {duration_ms}ms", count=42, duration_ms=123.4)
+
+        assert logs[0].message == "processed 42 items in 123.4ms"
+
+    def test_format_on_all_levels(self):
+        with capture() as logs:
+            log.debug("debug {x}", x=1)
+            log.info("info {x}", x=2)
+            log.warn("warn {x}", x=3)
+            log.error("error {x}", x=4)
+
+        assert logs[0].message == "debug 1"
+        assert logs[1].message == "info 2"
+        assert logs[2].message == "warn 3"
+        assert logs[3].message == "error 4"
+
+    def test_format_with_exception(self):
+        with capture() as logs:
+            try:
+                raise ValueError("test")
+            except ValueError:
+                log.exception("failed in {component}", component="db")
+
+        assert logs[0].message == "failed in db"
+
+    def test_format_on_bound_logger(self):
+        db = log.bind(component="database")
+        with capture() as logs:
+            db("query on {table}", table="users")
+
+        assert logs[0].message == "query on users"
+        assert logs[0].context["component"] == "database"
+
+    def test_format_empty_braces_no_crash(self):
+        """Empty braces {} without positional args should not crash."""
+        with capture() as logs:
+            log("value is {}", key="val")
+
+        # format() with {} but no positional args raises IndexError,
+        # so message stays unchanged
+        assert logs[0].message == "value is {}"
+
+
+# ── Async Context Manager ──────────────────────────────────
+
+
+class TestAsyncContextManager:
+    def test_async_context_manager(self):
+        async def run():
+            with capture() as logs:
+                async with log.context(request_id="abc"):
+                    log("inside async context")
+            return logs
+
+        logs = asyncio.run(run())
+        assert logs[0].context["request_id"] == "abc"
+
+
+# ── LogLevel ────────────────────────────────────────────────
+
+
+class TestLogLevel:
+    def test_label_property(self):
+        assert LogLevel.DEBUG.label == "DEBUG"
+        assert LogLevel.INFO.label == "INFO"
+        assert LogLevel.WARNING.label == "WARNING"
+        assert LogLevel.ERROR.label == "ERROR"
+
+
+# ── Source Location Edge Cases ──────────────────────────────
+
+
+class TestSourceLocationEdgeCases:
+    def test_get_source_with_deep_depth(self):
+        """_get_source should return None for unreachable frame depth."""
+        from spektr._core._logger import _get_source
+
+        # Request a frame deeper than the actual call stack
+        result = _get_source(9999)
+        assert result is None
+
+    def test_relpath_fallback(self):
+        """Source location should handle relpath failures (e.g., Windows cross-drive)."""
+        from unittest.mock import patch
+
+        with capture() as logs:
+            with patch("os.path.relpath", side_effect=ValueError("cross-drive")):
+                log("test relpath fallback")
+
+        assert len(logs) == 1
+        # Source should still be set (using basename fallback)
+        assert logs[0].source is not None

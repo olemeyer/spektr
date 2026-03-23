@@ -218,3 +218,29 @@ class TestProgressAsync:
         completed = logs[-1]
         assert "completed" in completed.message
         assert completed.data["current"] == 10
+
+
+class TestProgressSet:
+    def test_set_triggers_log(self):
+        """set() should log when enough time has passed."""
+        with capture() as logs:
+            with log.progress("import", total=100, log_interval=0.0) as p:
+                p.set(50)
+                p.set(100)
+
+        set_logs = [r for r in logs if "progress" in r.message]
+        assert len(set_logs) >= 1
+
+
+class TestProgressTqdmJsonMode:
+    def test_use_tqdm_returns_false_in_json_mode(self):
+        """_use_tqdm should return False in JSON mode."""
+        import spektr._config as config_module
+        from spektr._config import Config, OutputMode
+
+        old_config = config_module._config
+        try:
+            config_module._config = Config(output_mode=OutputMode.JSON)
+            assert _use_tqdm() is False
+        finally:
+            config_module._config = old_config

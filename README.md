@@ -75,10 +75,16 @@ def handle_order(order_id: int):
 
 **Here's the thing — those are real OpenTelemetry spans.** spektr uses OTel as its tracing backbone, so every `@trace` creates a proper OTel span with W3C context propagation. You just don't have to think about it.
 
-Point it at a collector and your traces show up in Jaeger, Grafana Tempo, or Datadog — without changing a single line of application code:
+Point it at any OTLP-compatible backend and your traces just show up — without changing a single line of application code:
 
 ```bash
+# Self-hosted (Jaeger, Grafana Tempo)
 OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318 python app.py
+
+# Managed (Dash0, Grafana Cloud, Honeycomb, Datadog, etc.)
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingress.eu-west-1.aws.dash0.com \
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>" \
+python app.py
 ```
 
 ---
@@ -140,17 +146,23 @@ Every request automatically gets a unique `request_id`, a trace span, W3C contex
 
 ## Production
 
-In dev you get colored console output. Set one env var and it switches to structured JSON with full OTel export:
+In dev you get colored console output. Set the endpoint and it switches to structured JSON with full OTel export:
 
 ```bash
+# Self-hosted collector
 OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318 python app.py
+
+# Managed backend
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingress.eu-west-1.aws.dash0.com \
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>" \
+python app.py
 ```
 
 ```json
 {"ts":"2026-03-22T14:23:01+00:00","level":"info","msg":"order created","order_id":42,"trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}
 ```
 
-Your existing Grafana dashboards, Jaeger UI, and Datadog APM just work — because it's standard OpenTelemetry under the hood.
+Works with any OTLP-compatible backend: Dash0, Grafana Cloud, Honeycomb, Datadog, Jaeger, Grafana Tempo, SigNoz, Axiom, and more.
 
 ---
 

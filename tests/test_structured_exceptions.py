@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from spektr import capture, log
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 class TestStructuredExceptionFields:

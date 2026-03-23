@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from spektr._config import Config, OutputMode, configure, get_config
-from spektr._types import LogLevel
+from spektr import LogLevel
 import spektr._config as config_module
 
 

@@ -356,7 +356,7 @@ class TestLogTraceCorrelation:
 
 class TestSpanData:
     def test_duration_ms_none_when_no_end_time(self):
-        from spektr._types import SpanData
+        from spektr import SpanData
 
         span = SpanData(
             name="test",
@@ -368,7 +368,7 @@ class TestSpanData:
         assert span.duration_ms is None
 
     def test_duration_ms_computed(self):
-        from spektr._types import SpanData
+        from spektr import SpanData
 
         span = SpanData(
             name="test",

@@ -688,7 +688,7 @@ Override auto-detected configuration at runtime. Unknown keys raise `ValueError`
 
 ```python
 import spektr
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 spektr.configure(
     service="order-api",
@@ -895,7 +895,7 @@ assert "not found" not in logs   # True — no match
 **Filtering:**
 
 ```python
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 with capture() as logs:
     log.debug("verbose detail")
@@ -981,7 +981,7 @@ Implement the `Sampler` protocol to control which logs are emitted.
 
 ```python
 from spektr import configure, RateLimitSampler
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 class WarningAndAbove:
     def should_emit(self, level, message):
@@ -1032,7 +1032,7 @@ Chain multiple samplers. A record passes only if every sampler returns `True`.
 
 ```python
 from spektr import configure, CompositeSampler, RateLimitSampler
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 class ProductionFilter:
     def should_emit(self, level, message):
@@ -1114,7 +1114,7 @@ Trace spans in JSON:
 ### `LogLevel`
 
 ```python
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 LogLevel.DEBUG    # 10
 LogLevel.INFO     # 20

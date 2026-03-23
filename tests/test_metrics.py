@@ -8,7 +8,7 @@ import pytest
 
 from spektr import capture, log
 from spektr._metrics._api import InMemoryMetrics, _metrics
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 @pytest.fixture(autouse=True)

@@ -5,7 +5,7 @@ import time
 from spektr._config import OutputMode
 from spektr._output._sinks import StderrSink
 from spektr._protocols import Sink
-from spektr._types import LogLevel, LogRecord
+from spektr import LogLevel, LogRecord
 import spektr._config as config_module
 
 

@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from spektr import capture, install, log
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 # ── @log.catch Decorator ─────────────────────────────────────

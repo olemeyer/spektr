@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from spektr import capture, SpektrMiddleware
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 async def _simple_app(scope, receive, send):

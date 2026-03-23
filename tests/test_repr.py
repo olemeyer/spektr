@@ -343,7 +343,7 @@ class TestFormatterIntegration:
     def test_broken_repr_in_json_output(self, capsys):
         """JSON formatter should handle broken repr without crashing."""
         from spektr._output._formatters import format_record_json
-        from spektr._types import LogLevel, LogRecord
+        from spektr import LogLevel, LogRecord
         import time as _time
 
         obj = BrokenRepr()
@@ -362,7 +362,7 @@ class TestFormatterIntegration:
     def test_broken_repr_in_rich_output(self, capsys):
         """Rich formatter should handle broken repr without crashing."""
         from spektr._output._formatters import format_record_rich
-        from spektr._types import LogLevel, LogRecord
+        from spektr import LogLevel, LogRecord
         import time as _time
 
         obj = BrokenRepr()

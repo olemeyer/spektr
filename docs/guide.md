@@ -571,7 +571,7 @@ Works with any OTLP-compatible backend: Dash0, Grafana Cloud, Honeycomb, Datadog
 
 ```python
 import spektr
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 spektr.configure(
     service="order-api",
@@ -659,7 +659,7 @@ assert "order created" in logs
 ### Filtering
 
 ```python
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 with capture() as logs:
     log.debug("verbose")

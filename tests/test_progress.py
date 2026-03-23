@@ -10,7 +10,7 @@ import pytest
 
 from spektr import capture, log
 from spektr._metrics._progress import ProgressTracker, _use_tqdm
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 class TestProgressBasic:

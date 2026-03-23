@@ -7,7 +7,7 @@ import pytest
 import spektr._config as config_module
 from spektr import capture, configure, log
 from spektr._sampling._sampler import CompositeSampler, RateLimitSampler
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 @pytest.fixture(autouse=True)

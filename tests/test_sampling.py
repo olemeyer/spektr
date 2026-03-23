@@ -5,7 +5,7 @@ import time
 
 from spektr._sampling._ratelimit import TokenBucket
 from spektr._sampling._sampler import CompositeSampler, RateLimitSampler
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 class TestTokenBucketBasic:

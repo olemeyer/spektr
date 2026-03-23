@@ -17,7 +17,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from spektr import SpektrMiddleware, capture, log
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 # ── App Factory ──────────────────────────────────────────────

@@ -7,7 +7,7 @@ import pytest
 from spektr import capture, install
 from spektr._integrations._bridge import SpektrHandler, install_bridge
 from spektr._config import get_config, configure
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 @pytest.fixture(autouse=True)

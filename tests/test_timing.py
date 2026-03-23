@@ -6,7 +6,7 @@ import time
 import pytest
 
 from spektr import capture, log
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 class TestTimeContextManager:

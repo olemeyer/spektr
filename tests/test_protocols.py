@@ -7,7 +7,7 @@ import pytest
 from spektr._output._sinks import StderrSink
 from spektr._protocols import MetricBackend, Sampler, Sink
 from spektr._sampling._sampler import CompositeSampler, RateLimitSampler
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 class TestSinkProtocol:

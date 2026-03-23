@@ -36,7 +36,7 @@ from spektr import (
 from spektr._integrations._bridge import SpektrHandler, install_bridge
 from spektr._config import OutputMode
 from spektr._metrics._api import _metrics
-from spektr._types import LogLevel
+from spektr import LogLevel
 import spektr._config as config_module
 import spektr._otel as otel_bridge
 

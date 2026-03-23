@@ -17,7 +17,7 @@ from spektr._output._formatters import (
     format_record_json,
     format_trace_json,
 )
-from spektr._types import LogLevel, LogRecord, SourceLocation, SpanData
+from spektr import LogLevel, LogRecord, SourceLocation, SpanData
 import spektr._config as config_module
 
 

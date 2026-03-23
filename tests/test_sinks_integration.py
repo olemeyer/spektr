@@ -7,7 +7,7 @@ import pytest
 import spektr._config as config_module
 from spektr import capture, configure, log
 from spektr._config import Config
-from spektr._types import LogLevel, LogRecord
+from spektr import LogLevel, LogRecord
 
 
 @pytest.fixture(autouse=True)

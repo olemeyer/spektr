@@ -4,7 +4,7 @@ import threading
 
 from spektr import capture, log
 from spektr._core._logger import _every_counters, _once_seen, _rate_lock
-from spektr._types import LogLevel
+from spektr import LogLevel
 
 
 def _reset_rate_state():

@@ -14,7 +14,7 @@ import pytest
 from spektr import capture, configure, log, trace
 from spektr._config import OutputMode
 from spektr._context import get_current_span
-from spektr._types import LogLevel
+from spektr import LogLevel
 import spektr._config as config_module
 
 
@@ -454,7 +454,7 @@ class TestRedactionIntegration:
     def test_redaction_in_timing_data(self, capsys):
         """Sensitive keys in log.time kwargs should be redacted in output."""
         from spektr._output._formatters import format_record_json
-        from spektr._types import LogLevel, LogRecord
+        from spektr import LogLevel, LogRecord
 
         record = LogRecord(
             timestamp=time.time(),

@@ -169,64 +169,55 @@ Works with any OTLP-compatible backend: Dash0, Grafana Cloud, Honeycomb, Datadog
 ## Everything Else
 
 ```python
-# Message formatting
 log("user {name} signed up", name="ole", plan="pro")
-# → user ole signed up  name='ole' plan='pro'
+# 14:23:01 INFO  user ole signed up  name='ole' plan='pro'
 
-# Exception capture in except blocks
 try:
     db.execute(query)
 except DatabaseError:
     log.exception("query failed", table="orders")
-    # → error_type, error_message, error_stacktrace in data
+# 14:23:02 ERROR  query failed  table='orders' error_type='DatabaseError' error_message='timeout'
 
-# Timing
-with log.time("db query"):              # logs duration_ms automatically
+with log.time("db query"):
     rows = db.fetch_all()
+# 14:23:03 INFO  db query  duration_ms=42.1
 
-# Rate limiting
-log.once("cache ready")                 # first time only
-log.every(1000, "heartbeat")            # every Nth call
-log.sample(0.01, "verbose")             # 1% probability
-log.once().warn("deprecated API")       # chaining with levels
+log.once("cache ready")                 # only the first call emits
+log.every(1000, "heartbeat")            # every 1000th call
+log.sample(0.01, "verbose detail")      # ~1% probability
+log.once().warn("deprecated API")       # chaining picks the level
 
-# Metrics
 log.count("http.requests", method="GET")
 log.gauge("queue.depth", 42)
 log.histogram("latency_ms", 123.4)
-log.emit_metrics()                      # dump all metrics as a log line
+log.emit_metrics()
+# 14:23:04 INFO  metrics  http.requests=1 queue.depth=42 latency_ms=123.4
 
-# Progress tracking (uses tqdm when available)
-with log.progress("import", total=10000) as p:
+with log.progress("importing", total=10000) as p:
     for item in items:
         process(item)
         p.advance()
+# importing: 100%|████████████████████| 10000/10000 [00:02<00:00, 3571.43it/s]
+# 14:23:07 INFO  importing completed  total=10000 duration_ms=2800.0
 
-# Bound loggers
 db = log.bind(component="database")
-db("query executed", table="users")     # component always attached
+db("connected", host="primary.db")
+# 14:23:08 INFO  connected  component='database' host='primary.db'
 
-# Sensitive data redaction (on by default)
 log("auth", password="secret123", api_key="sk-abc")
-# → password='***' api_key='***'
+# 14:23:09 INFO  auth  password='***' api_key='***'
 
-# W3C trace propagation
-headers = trace.inject()                # outgoing
-context = trace.extract(headers)        # incoming
+headers = trace.inject()                # {"traceparent": "00-4bf92f35...-01"}
+context = trace.extract(headers)        # context.trace_id, context.parent_id
 
-# Health check endpoint
 configure(health_path="/healthz")
 # GET /healthz → 200 {"status": "ok", "service": "order-api"}
 
-# Testing — no mocks needed
 with capture() as logs:
     create_order(42)
 assert logs[0].message == "order created"
 
-# Production sampling
 configure(sampler=RateLimitSampler(per_second=100))
-
-# Custom sinks
 configure(sinks=[DatadogSink(), SlackAlertSink()])
 ```
 

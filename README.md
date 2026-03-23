@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/guide.md">Guide</a> · <a href="docs/api.md">API Reference</a> · <a href="docs/architecture.md">Architecture</a>
+  <a href="https://github.com/olemeyer/spektr/blob/main/docs/guide.md">Guide</a> · <a href="https://github.com/olemeyer/spektr/blob/main/docs/api.md">API Reference</a> · <a href="https://github.com/olemeyer/spektr/blob/main/docs/architecture.md">Architecture</a>
 </p>
 
 ---
@@ -221,7 +221,7 @@ configure(sampler=RateLimitSampler(per_second=100))
 configure(sinks=[DatadogSink(), SlackAlertSink()])
 ```
 
-See the [Guide](docs/guide.md) for the full walkthrough and [API Reference](docs/api.md) for every method.
+See the [Guide](https://github.com/olemeyer/spektr/blob/main/docs/guide.md) for the full walkthrough and [API Reference](https://github.com/olemeyer/spektr/blob/main/docs/api.md) for every method.
 
 ---
 

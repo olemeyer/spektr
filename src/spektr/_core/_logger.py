@@ -12,11 +12,15 @@ from collections.abc import Callable
 from typing import Any
 
 from .._config import OutputMode, get_config
-from .._context import _capturing_sink, get_current_span, get_log_context, merge_log_context, reset_log_context
+from .._context import _capturing_sink, _log_context, get_current_span, merge_log_context, reset_log_context
 from .._output._formatters import format_record_json, format_record_rich
 from .._types import LogLevel, LogRecord, SourceLocation
 
 _SPEKTR_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Cache abspath and relpath lookups — filenames don't change at runtime.
+_abspath_cache: dict[str, str] = {}
+_relpath_cache: dict[str, str] = {}
 
 
 def _get_source(depth: int) -> SourceLocation | None:
@@ -26,19 +30,26 @@ def _get_source(depth: int) -> SourceLocation | None:
         return None
     # walk up to find first frame outside spektr internals
     while frame is not None:
-        filename = os.path.abspath(frame.f_code.co_filename)
-        if not filename.startswith(_SPEKTR_DIR):
+        co_filename = frame.f_code.co_filename
+        abspath = _abspath_cache.get(co_filename)
+        if abspath is None:
+            abspath = os.path.abspath(co_filename)
+            _abspath_cache[co_filename] = abspath
+        if not abspath.startswith(_SPEKTR_DIR):
             break
         frame = frame.f_back
     if frame is None:  # pragma: no cover – all frames inside spektr
         return None
-    filename = frame.f_code.co_filename
-    try:
-        filename = os.path.relpath(filename)
-    except ValueError:
-        filename = os.path.basename(filename)
+    co_filename = frame.f_code.co_filename
+    display = _relpath_cache.get(co_filename)
+    if display is None:
+        try:
+            display = os.path.relpath(co_filename)
+        except ValueError:
+            display = os.path.basename(co_filename)
+        _relpath_cache[co_filename] = display
     return SourceLocation(
-        file=filename,
+        file=display,
         line=frame.f_lineno,
         function=frame.f_code.co_name,
     )
@@ -500,7 +511,17 @@ class Logger:
 
         source = _get_source(depth + 1) if config.show_source else None
         span = get_current_span()
-        ctx = {**get_log_context(), **self._bound}
+
+        # Fast path: avoid dict copies when no context is set.
+        log_ctx = _log_context.get()
+        if log_ctx and self._bound:
+            ctx = {**log_ctx, **self._bound}
+        elif log_ctx:
+            ctx = log_ctx.copy()
+        elif self._bound:
+            ctx = self._bound
+        else:
+            ctx = {}
 
         # Structured exception enrichment — add error fields to data.
         if exc_info is not None and exc_info[1] is not None:

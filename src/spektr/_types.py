@@ -17,14 +17,14 @@ class LogLevel(enum.IntEnum):
         return self.name
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SourceLocation:
     file: str
     line: int
     function: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LogRecord:
     timestamp: float
     level: LogLevel

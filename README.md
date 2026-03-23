@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/olemeyer/spektr">
-    <img src="docs/assets/logo.svg" alt="spektr" width="380">
+    <img src="https://raw.githubusercontent.com/olemeyer/spektr/main/docs/assets/logo.svg" alt="spektr" width="380">
   </a>
 </p>
 

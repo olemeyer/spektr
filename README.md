@@ -169,6 +169,17 @@ Works with any OTLP-compatible backend: Dash0, Grafana Cloud, Honeycomb, Datadog
 ## Everything Else
 
 ```python
+# Message formatting
+log("user {name} signed up", name="ole", plan="pro")
+# → user ole signed up  name='ole' plan='pro'
+
+# Exception capture in except blocks
+try:
+    db.execute(query)
+except DatabaseError:
+    log.exception("query failed", table="orders")
+    # → error_type, error_message, error_stacktrace in data
+
 # Timing
 with log.time("db query"):              # logs duration_ms automatically
     rows = db.fetch_all()
@@ -177,11 +188,13 @@ with log.time("db query"):              # logs duration_ms automatically
 log.once("cache ready")                 # first time only
 log.every(1000, "heartbeat")            # every Nth call
 log.sample(0.01, "verbose")             # 1% probability
+log.once().warn("deprecated API")       # chaining with levels
 
 # Metrics
 log.count("http.requests", method="GET")
 log.gauge("queue.depth", 42)
 log.histogram("latency_ms", 123.4)
+log.emit_metrics()                      # dump all metrics as a log line
 
 # Progress tracking (uses tqdm when available)
 with log.progress("import", total=10000) as p:
@@ -193,20 +206,28 @@ with log.progress("import", total=10000) as p:
 db = log.bind(component="database")
 db("query executed", table="users")     # component always attached
 
+# Sensitive data redaction (on by default)
+log("auth", password="secret123", api_key="sk-abc")
+# → password='***' api_key='***'
+
 # W3C trace propagation
 headers = trace.inject()                # outgoing
 context = trace.extract(headers)        # incoming
+
+# Health check endpoint
+configure(health_path="/healthz")
+# GET /healthz → 200 {"status": "ok", "service": "order-api"}
 
 # Testing — no mocks needed
 with capture() as logs:
     create_order(42)
 assert logs[0].message == "order created"
 
-# Custom sinks and samplers
-configure(
-    sinks=[DatadogSink()],
-    sampler=RateLimitSampler(per_second=100),
-)
+# Production sampling
+configure(sampler=RateLimitSampler(per_second=100))
+
+# Custom sinks
+configure(sinks=[DatadogSink(), SlackAlertSink()])
 ```
 
 See the [Guide](docs/guide.md) for the full walkthrough and [API Reference](docs/api.md) for every method.

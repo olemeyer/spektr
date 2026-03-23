@@ -44,20 +44,11 @@ src/spektr/
 │   ├── _api.py              # InMemoryMetrics (default backend)
 │   └── _progress.py         # ProgressTracker for batch operations
 │
-├── _integrations/
-│   ├── _bridge.py           # stdlib logging.Handler → spektr bridge
-│   ├── _middleware.py        # ASGI middleware (request instrumentation)
-│   ├── _exceptions.py       # sys.excepthook / threading.excepthook
-│   └── _health.py           # JSON health check ASGI endpoint
-│
-└── [root shims]             # Re-exports from canonical subpackage locations
-    ├── _logger.py           #   → _core._logger
-    ├── _tracer.py           #   → _core._tracer
-    ├── _capture.py          #   → _core._capture
-    ├── _formatters.py       #   → _output._formatters
-    ├── _bridge.py           #   → _integrations._bridge
-    ├── _middleware.py        #   → _integrations._middleware
-    └── _exceptions.py       #   → _integrations._exceptions
+└── _integrations/
+    ├── _bridge.py           # stdlib logging.Handler → spektr bridge
+    ├── _middleware.py        # ASGI middleware (request instrumentation)
+    ├── _exceptions.py       # sys.excepthook / threading.excepthook
+    └── _health.py           # JSON health check ASGI endpoint
 ```
 
 ## Dependency Layers
@@ -100,10 +91,6 @@ Layers 6 and 7 use deferred imports (inside function bodies) for references to l
 ### Why OTel is always initialized
 
 spektr unconditionally creates a `TracerProvider` at startup, even without an OTLP endpoint. This ensures `trace_id` and `span_id` are always real OTel-generated identifiers. When no endpoint is configured, spans are created but not exported — no network traffic, no overhead beyond ID generation.
-
-### Why root-level shim modules exist
-
-All internal modules live in subpackages (`_core/`, `_output/`, etc.), but root-level shim files re-export from those locations. This preserves backward compatibility for any code that imported directly from `spektr._logger` or `spektr._formatters`.
 
 ## Data Flow
 

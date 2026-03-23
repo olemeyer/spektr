@@ -13,7 +13,7 @@ pip install spektr
 Optional extras:
 
 ```bash
-pip install spektr[otlp]   # OTLP export (Jaeger, Grafana Tempo, Datadog)
+pip install spektr[otlp]   # OTLP export (Dash0, Grafana Cloud, Datadog, Jaeger, etc.)
 pip install spektr[tqdm]   # tqdm progress bars
 ```
 

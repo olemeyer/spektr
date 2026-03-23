@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "spektr"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Zero-config Python observability. Logging, tracing, and error tracking in one."
 requires-python = ">=3.10"
 license = "MIT"
@@ -45,6 +45,12 @@ Documentation = "https://github.com/olemeyer/spektr/tree/main/docs"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["no_otel_setup: skip automatic OTel fixture setup"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/spektr/_version.py"
 
 [tool.ruff]
 target-version = "py310"

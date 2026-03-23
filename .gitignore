@@ -12,3 +12,4 @@ build/
 .coverage
 htmlcov/
 uv.lock
+src/spektr/_version.py

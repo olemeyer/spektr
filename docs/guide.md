@@ -214,13 +214,27 @@ In JSON mode these appear in every line — your log aggregator can join them wi
 
 ### It's real OpenTelemetry
 
-Every `@trace` creates a real OTel span with W3C context propagation. Point it at a collector and traces show up in Jaeger, Grafana Tempo, or Datadog:
+Every `@trace` creates a real OTel span with W3C context propagation. Point it at any OTLP-compatible backend and traces show up — no code changes needed:
 
 ```bash
+# Self-hosted (Jaeger, Grafana Tempo)
 OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318 python app.py
+
+# Dash0
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingress.eu-west-1.aws.dash0.com \
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <dash0-token>" \
+python app.py
+
+# Datadog (via OTel Collector or Datadog Agent)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 python app.py
+
+# Grafana Cloud
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-eu-west-0.grafana.net/otlp \
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64-credentials>" \
+python app.py
 ```
 
-No code changes needed.
+spektr uses the standard `OTLPSpanExporter` — any backend that speaks OTLP/HTTP works out of the box.
 
 ---
 
@@ -535,15 +549,23 @@ logger.info("SELECT * FROM users")
 
 ### Dev → Prod switch
 
-In dev you get colored console output. Set one env var and it switches to structured JSON with full OTel export:
+In dev you get colored console output. Set the endpoint and it switches to structured JSON with full OTel export:
 
 ```bash
+# Self-hosted collector
 OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318 python app.py
+
+# Managed backends (Dash0, Grafana Cloud, Honeycomb, etc.)
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingress.eu-west-1.aws.dash0.com \
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <token>" \
+python app.py
 ```
 
 ```json
 {"ts":"2026-03-22T14:23:01+00:00","level":"info","msg":"order created","order_id":42,"trace_id":"4bf92f35...","span_id":"00f067aa..."}
 ```
+
+Works with any OTLP-compatible backend: Dash0, Grafana Cloud, Honeycomb, Datadog (via Agent), Jaeger, Grafana Tempo, SigNoz, Axiom, and more.
 
 ### Runtime configuration
 

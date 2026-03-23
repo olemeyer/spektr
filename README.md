@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/olemeyer/spektr/actions"><img src="https://img.shields.io/github/actions/workflow/status/olemeyer/spektr/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI"></a>
   <a href="https://pypi.org/project/spektr/"><img src="https://img.shields.io/pypi/v/spektr?style=flat-square&color=7C6CF0" alt="PyPI"></a>
-  <a href="https://pypi.org/project/spektr/"><img src="https://img.shields.io/pypi/pyversions/spektr?style=flat-square" alt="Python"></a>
+  <a href="https://pypi.org/project/spektr/"><img src="https://img.shields.io/pypi/pyversions/spektr?style=flat-square&v=2" alt="Python"></a>
 </p>
 
 <p align="center">
